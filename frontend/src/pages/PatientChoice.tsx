@@ -12,7 +12,7 @@ export default function PatientChoice() {
 
         <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
           <button onClick={() => nav("/basic")}>New Patient</button>
-          <button onClick={() => nav("/info")}>Existing Patient</button>
+          <button onClick={() => nav("/basic")}>Existing Patient</button>
         </div>
       </div>
     </div>
