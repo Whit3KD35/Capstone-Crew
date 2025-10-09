@@ -1,0 +1,82 @@
+/* Global Layout */
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: linear-gradient(135deg, #e7ecff, #f4f7ff);
+  color: #111;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #dde1f7;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 2rem 3rem;
+  width: 420px;
+  text-align: center;
+}
+
+/* Headers */
+h1 {
+  font-size: 1.8rem;
+  color: #1e1e2f;
+  margin-bottom: 0.25rem;
+}
+h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 1rem;
+}
+
+/* Inputs*/
+input {
+  display: block;
+  width: 100%;
+  margin: 0.4rem 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #ccd3ff;
+  border-radius: 8px;
+  background: #f8f9ff;
+  transition: 0.2s;
+}
+
+input:focus {
+  outline: none;
+  border-color: #7e8cff;
+  background: #fff;
+  box-shadow: 0 0 0 2px #c6caff;
+}
+
+/* Buttons */
+button {
+  margin-top: 1rem;
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #708bff, #9c6eff);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+button:hover {
+  transform: scale(1.03);
+  background: linear-gradient(135deg, #5a74ff, #8b5cff);
+}
+
+/* Random Tiny Things */
+p {
+  margin-top: 0.8rem;
+  font-size: 0.9rem;
+  color: #333;
+}
