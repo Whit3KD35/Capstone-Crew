@@ -1,0 +1,34 @@
+# Virtual environment
+venv/
+*/venv/
+
+# Local environment variables
+.env
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Alembic and application caches
+alembic/__pycache__/
+app/__pycache__/
+
+# Databases and generated files
+*.db
+*.sqlite3
+
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# Local IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
