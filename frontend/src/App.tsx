@@ -1,36 +1,36 @@
-import { useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import Login from "./pages/Login";
+import PatientChoice from "./pages/PatientChoice";
+import BasicInfo from "./pages/BasicInfo";
+import PatientInfo from "./pages/PatientInfo";
+import Simulation from "./pages/Simulation";
 
-export default function App() {
-  const [page, setPage] = useState<"login" | "patient" | "simulation">("login");
-
+function Shell() {
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
       <header style={{ marginBottom: "1.5rem" }}>
         <h1>Digital Twin</h1>
       </header>
-
-      {page === "login" && (
-        <section>
-          <h2>Login</h2>
-          <input placeholder="Email" style={{ display: "block", marginBottom: 8 }} />
-          <input placeholder="Password" type="password" style={{ display: "block", marginBottom: 8 }} />
-          <button onClick={() => setPage("patient")}>Sign in</button>
-        </section>
-      )}
-
-      {page === "patient" && (
-        <section>
-          <h2>Patient Area</h2>
-          <button onClick={() => setPage("simulation")}>Simulation</button>
-        </section>
-      )}
-
-      {page === "simulation" && (
-        <section>
-          <h2>Simulation Page</h2>
-          <p>Dosing simulation temp</p>
-        </section>
-      )}
+      <Outlet />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Shell />}>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/choose" element={<PatientChoice />} />
+          <Route path="/basic" element={<BasicInfo />} />
+          <Route path="/info" element={<PatientInfo />} />
+          <Route path="/simulate" element={<Simulation />} />
+
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
