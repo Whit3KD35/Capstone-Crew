@@ -1,6 +1,6 @@
 import logging
 from sqlmodel import Session
-from core.db import engine, create_tables
+from core.db import engine, create_tables, drop_tables
 import models
 
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +15,7 @@ def init() -> None:
 def main() -> None:
     logger.info("Creating tables...")
     #init()
+    drop_tables()
     create_tables()
     logger.info("Tables created")
 

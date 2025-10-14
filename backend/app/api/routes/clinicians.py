@@ -8,6 +8,7 @@ router = APIRouter(
     tags=["clinicians"]
 )
 
+'''
 @router.get("/")
 def read_clinician(session: Session = Depends(get_session)):
     return {"message": "read clinician"}
@@ -15,3 +16,4 @@ def read_clinician(session: Session = Depends(get_session)):
 @router.post("/")
 def add_clinican(clinician: Clinician, session: Session = Depends(get_session)):
     return {"message": "add clinician"}
+'''
