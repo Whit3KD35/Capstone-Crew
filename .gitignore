@@ -22,3 +22,5 @@ pnpm-debug.log*
 # Temporary and miscellaneous
 tmp/
 temp/
+.venv/
+__pycache__/
