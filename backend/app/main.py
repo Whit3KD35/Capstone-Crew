@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from .api.routes import clinicians, patients, simulations, login, medications
+from .api.routes import clinicians, patients, simulations, login, medications, bert
 from .core.db import create_tables
 
 @asynccontextmanager
@@ -27,3 +27,4 @@ app.include_router(patients.router)
 app.include_router(simulations.router)
 app.include_router(login.router)
 app.include_router(medications.router)
+app.include_router(bert.router)
