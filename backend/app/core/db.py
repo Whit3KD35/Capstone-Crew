@@ -2,7 +2,7 @@ from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy import Engine
 
 PG_USER = "capstone_admin"
-PG_PASS = "capstone_admin"
+PG_PASS = "Capstone88*"
 PG_PORT = "5432"
 DB = "postgresql+psycopg2"
 DB_HOST = "digitial-twin-db.crmm8iyoooip.us-east-2.rds.amazonaws.com"
