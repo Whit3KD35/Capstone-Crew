@@ -5,6 +5,7 @@ from typing import Dict, Tuple, List, Any, Optional
 
 import requests
 from sqlmodel import Session, select
+import xml.etree.ElementTree as ET
 
 from .models import Patient, Medication, Simulation
 
@@ -21,16 +22,16 @@ def _safe_get(url: str, params: dict | None = None, headers: dict | None = None,
     except Exception:
         return None
 
-def _extract_number_from_text(text: str) -> Optional[float]:
-    if not text:
-        return None
-    m = re.search(r"([0-9]+(?:\.[0-9]+)?)", text.replace(",", ""))
-    if m:
-        try:
-            return float(m.group(1))
-        except Exception:
-            return None
-    return None
+def _time_to_hours(value: float, unit: str) -> float:
+    unit = unit.lower()
+    if unit.startswith("min"):
+        return value / 60.0
+    if unit.startswith("h"):
+        return value
+    if unit.startswith("d"):
+        return value * 24.0
+    return value
+
 
 def _dec_to_float(x: Optional[Decimal | float | int]) -> Optional[float]:
     if x is None:
@@ -78,12 +79,22 @@ def ensure_patient_crcl(session: Session, patient: Patient) -> None:
 
 # medication fetch + build parameters
 def fetch_from_pubchem(drug_name: str) -> Dict[str, Any]:
-    out = {"raw": None, "half_life_hr": None, "clearance_L_per_hr": None, "Vd_L": None, "bioavailability": None}
+    out = {
+        "raw": None,
+        "half_life_hr": None,
+        "clearance_L_per_hr": None,
+        "Vd_L": None,
+        "bioavailability": None,
+    }
 
-    url_cid = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{requests.utils.requote_uri(drug_name)}/cids/JSON"
+    url_cid = (
+        "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/"
+        f"{requests.utils.requote_uri(drug_name)}/cids/JSON"
+    )
     r1 = _safe_get(url_cid)
     if not r1:
         return out
+
     try:
         cids = r1.json().get("IdentifierList", {}).get("CID", [])
         if not cids:
@@ -99,52 +110,135 @@ def fetch_from_pubchem(drug_name: str) -> Dict[str, Any]:
 
     try:
         j = r2.json()
-        sections = j.get("Record", {}).get("Section", [])
 
-        def find_sections(secs):
-            acc = []
-            for s in secs:
-                if s.get("TOCHeading", "").lower().startswith("pharmacokinetics"):
-                    acc.append(s)
-                for cs in s.get("Section", []) or []:
-                    acc.extend(find_sections([cs]))
-            return acc
+        def collect_strings(node, acc):
+            if isinstance(node, dict):
+                swm = node.get("StringWithMarkup")
+                if isinstance(swm, list):
+                    for v in swm:
+                        s = v.get("String")
+                        if isinstance(s, str) and s:
+                            acc.append(s)
+                for v in node.values():
+                    collect_strings(v, acc)
+            elif isinstance(node, list):
+                for v in node:
+                    collect_strings(v, acc)
 
-        pk_sections = find_sections(sections)
-        texts = []
-        for s in pk_sections:
-            for info in s.get("Information", []) or []:
-                for v in info.get("Value", {}).get("StringWithMarkup", []) or []:
-                    texts.append(v.get("String", ""))
+        texts: list = []
+        collect_strings(j, texts)
         raw = "\n".join(texts) if texts else None
         out["raw"] = raw
 
-        if raw:
-            m_half = re.search(r"half[ -]?life[^0-9\n\r\:]*?([0-9]+(?:\.[0-9]+)?)\s*(h|hr|hours?)", raw, re.I)
-            if m_half:
-                out["half_life_hr"] = float(m_half.group(1))
+        if not raw:
+            return out
 
-            m_vd = re.search(r"(volume of distribution|Vd)[^0-9\n\r\:]*?([0-9]+(?:\.[0-9]+)?)\s*(L|liters?)", raw, re.I)
-            if m_vd:
-                out["Vd_L"] = float(m_vd.group(2))
+        # Half-life
+        m_half = re.search(
+            r"half[ -]?life[^0-9\n\r:]*?([0-9]+(?:\.[0-9]+)?)\s*"
+            r"(h|hr|hrs|hour|hours|d|day|days|wk|wks|week|weeks)",
+            raw,
+            re.I,
+        )
+        if m_half:
+            val = float(m_half.group(1))
+            unit = m_half.group(2).lower()
+            if unit.startswith("h"):
+                out["half_life_hr"] = val
+            elif unit.startswith("d"):
+                out["half_life_hr"] = val * 24.0
+            elif unit.startswith("w"):
+                out["half_life_hr"] = val * 24.0 * 7.0
 
-            m_cl = re.search(r"clearance[^0-9\n\r\:]*?([0-9]+(?:\.[0-9]+)?)\s*(mL/min|mL\/min|L\/h|L/h|mL per min|L per h)", raw, re.I)
-            if m_cl:
-                val = float(m_cl.group(1))
-                unit = m_cl.group(2).lower()
-                out["clearance_L_per_hr"] = (val / 1000.0) * 60.0 if "ml" in unit else val
+        # Clearance
+        def _convert_clearance(val: float, unit: str) -> Optional[float]:
+            unit = unit.lower().replace(" ", "")
+            weight_kg = 70.0
+            if "ml/min/kg" in unit:
+                return val * weight_kg / 1000.0 * 60.0
+            if "ml/min" in unit:
+                return val / 1000.0 * 60.0
+            if "l/h/kg" in unit or "l/hr/kg" in unit:
+                return val * weight_kg
+            if "l/h" in unit or "l/hr" in unit or "lperh" in unit:
+                return val
+            return None
 
-            m_f = re.search(r"(bioavailability|absolute bioavailability)[^0-9\n\r\:]*?([0-9]{1,3})\s*%?", raw, re.I)
-            if m_f:
+        m_cl = re.search(
+            r"clearance[^0-9\n\r:]*?([0-9]+(?:\.[0-9]+)?)\s*"
+            r"(mL\s*/\s*min\s*/\s*kg|mL\s*/\s*min|L\s*/\s*h\s*/\s*kg|L\s*/\s*h|L\s*/\s*hr|L\s*per\s*h)",
+            raw,
+            re.I,
+        )
+        cl_val: Optional[float] = None
+        if m_cl:
+            val = float(m_cl.group(1))
+            unit = m_cl.group(2)
+            cl_val = _convert_clearance(val, unit)
+        if cl_val is None:
+            m_cl2 = re.search(
+                r"([0-9]+(?:\.[0-9]+)?)\s*"
+                r"(mL\s*/\s*min\s*/\s*kg|mL\s*/\s*min|L\s*/\s*h\s*/\s*kg|L\s*/\s*h|L\s*/\s*hr)",
+                raw,
+                re.I,
+            )
+            if m_cl2:
+                val = float(m_cl2.group(1))
+                unit = m_cl2.group(2)
+                cl_val = _convert_clearance(val, unit)
+        if cl_val is not None:
+            out["clearance_L_per_hr"] = cl_val
+
+        # Volume of distribution
+        m_vd = re.search(
+            r"(volume of distribution|Vd)[^0-9\n\r:]*?"
+            r"([0-9]+(?:\.[0-9]+)?)\s*(L\s*/\s*kg|L/kg|L|liters?)",
+            raw,
+            re.I,
+        )
+        if m_vd:
+            val = float(m_vd.group(2))
+            unit = m_vd.group(3).lower().replace(" ", "")
+            if "l/kg" in unit:
+                out["Vd_L"] = val * 70.0
+            else:
+                out["Vd_L"] = val
+
+        # Bioavailability
+        m_f = re.search(
+            r"(bioavailability|absolute bioavailability)[^0-9%\n\r:]*?"
+            r"([0-9]{1,3}(?:\.[0-9]+)?)\s*%?",
+            raw,
+            re.I,
+        )
+        if not m_f:
+            m_f = re.search(
+                r"([0-9]{1,3}(?:\.[0-9]+)?)\s*%[^.\n\r]*bioavailability",
+                raw,
+                re.I,
+            )
+        if m_f:
+            if m_f.lastindex and m_f.lastindex >= 2:
                 val = float(m_f.group(2))
-                out["bioavailability"] = val / 100.0 if val > 1 else val
+            else:
+                val = float(m_f.group(1))
+            out["bioavailability"] = val / 100.0 if val > 1 else val
+
     except Exception:
         pass
 
     return out
 
+
+
 def fetch_from_dailymed(drug_name: str) -> Dict[str, Any]:
-    out = {"raw": None, "half_life_hr": None, "clearance_L_per_hr": None, "Vd_L": None, "bioavailability": None}
+    out = {
+        "raw": None,
+        "half_life_hr": None,
+        "clearance_L_per_hr": None,
+        "Vd_L": None,
+        "bioavailability": None,
+    }
 
     search_url = "https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json"
     r = _safe_get(search_url, params={"drug_label_name": drug_name})
@@ -157,48 +251,118 @@ def fetch_from_dailymed(drug_name: str) -> Dict[str, Any]:
         items = r.json().get("data", [])
         if not items:
             return out
+
         setid = items[0].get("setid")
         if not setid:
             return out
 
-        spl_url = f"https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/{setid}.xml"
-        r2 = _safe_get(spl_url, headers={"Accept": "application/xml"})
+        spl_url = f"https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/{setid}.json"
+        r2 = _safe_get(spl_url, headers={"Accept": "application/json"})
         if not r2:
             return out
+
         label = r2.json().get("data", {})
         sections = label.get("sections", []) or []
 
-        texts = []
+        texts: list = []
         for sec in sections:
-            heading = (sec.get("title") or "").lower()
-            if "pharmacokinetics" in heading:
-                texts.append(sec.get("text", "") or "")
+            title = (sec.get("title") or "").lower()
+            if "pharmacokinetics" in title or "clinical pharmacology" in title:
+                txt = sec.get("text") or ""
+                if txt:
+                    texts.append(txt)
+
         raw = "\n".join(texts) if texts else None
         out["raw"] = raw
 
-        if raw:
-            m_half = re.search(r"half[ -]?life[^0-9\n\r\:]*?([0-9]+(?:\.[0-9]+)?)\s*(h|hr|hours?)", raw, re.I)
-            if m_half:
-                out["half_life_hr"] = float(m_half.group(1))
+        if not raw:
+            return out
 
-            m_vd = re.search(r"(volume of distribution|Vd)[^0-9\n\r\:]*?([0-9]+(?:\.[0-9]+)?)\s*(L|liters?)", raw, re.I)
-            if m_vd:
-                out["Vd_L"] = float(m_vd.group(2))
+        # Half-life
+        m_half = re.search(
+            r"half[ -]?life[^0-9\n\r:]*?([0-9]+(?:\.[0-9]+)?)\s*"
+            r"(h|hr|hrs|hour|hours|d|day|days|wk|wks|week|weeks)",
+            raw,
+            re.I,
+        )
+        if m_half:
+            val = float(m_half.group(1))
+            unit = m_half.group(2).lower()
+            if unit.startswith("h"):
+                out["half_life_hr"] = val
+            elif unit.startswith("d"):
+                out["half_life_hr"] = val * 24.0
+            elif unit.startswith("w"):
+                out["half_life_hr"] = val * 24.0 * 7.0
 
-            m_cl = re.search(r"clearance[^0-9\n\r\:]*?([0-9]+(?:\.[0-9]+)?)\s*(mL/min|mL\/min|L\/h|L/h)", raw, re.I)
-            if m_cl:
-                val = float(m_cl.group(1))
-                unit = m_cl.group(2).lower()
-                out["clearance_L_per_hr"] = (val / 1000.0) * 60.0 if "ml" in unit else val
+        # Clearance
+        def _convert_clearance(val: float, unit: str) -> Optional[float]:
+            unit = unit.lower().replace(" ", "")
+            weight_kg = 70.0
+            if "ml/min/kg" in unit:
+                return val * weight_kg / 1000.0 * 60.0
+            if "ml/min" in unit:
+                return val / 1000.0 * 60.0
+            if "l/h/kg" in unit or "l/hr/kg" in unit:
+                return val * weight_kg
+            if "l/h" in unit or "l/hr" in unit or "lperh" in unit:
+                return val
+            return None
 
-            m_f = re.search(r"(bioavailability|absolute bioavailability)[^0-9\n\r\:]*?([0-9]{1,3})\s*%?", raw, re.I)
-            if m_f:
+        m_cl = re.search(
+            r"clearance[^0-9\n\r:]*?([0-9]+(?:\.[0-9]+)?)\s*"
+            r"(mL\s*/\s*min\s*/\s*kg|mL\s*/\s*min|L\s*/\s*h\s*/\s*kg|L\s*/\s*h|L\s*/\s*hr|L\s*per\s*h)",
+            raw,
+            re.I,
+        )
+        if m_cl:
+            val = float(m_cl.group(1))
+            unit = m_cl.group(2)
+            cl_val = _convert_clearance(val, unit)
+            if cl_val is not None:
+                out["clearance_L_per_hr"] = cl_val
+
+        # Volume of distribution
+        m_vd = re.search(
+            r"(volume of distribution|Vd)[^0-9\n\r:]*?"
+            r"([0-9]+(?:\.[0-9]+)?)\s*(L\s*/\s*kg|L/kg|L|liters?)",
+            raw,
+            re.I,
+        )
+        if m_vd:
+            val = float(m_vd.group(2))
+            unit = m_vd.group(3).lower().replace(" ", "")
+            if "l/kg" in unit:
+                out["Vd_L"] = val * 70.0
+            else:
+                out["Vd_L"] = val
+
+        # Bioavailability
+        m_f = re.search(
+            r"(bioavailability|absolute bioavailability)[^0-9%\n\r:]*?"
+            r"([0-9]{1,3}(?:\.[0-9]+)?)\s*%?",
+            raw,
+            re.I,
+        )
+        if not m_f:
+            m_f = re.search(
+                r"([0-9]{1,3}(?:\.[0-9]+)?)\s*%[^.\n\r]*bioavailability",
+                raw,
+                re.I,
+            )
+        if m_f:
+            if m_f.lastindex and m_f.lastindex >= 2:
                 val = float(m_f.group(2))
-                out["bioavailability"] = val / 100.0 if val > 1 else val
+            else:
+                val = float(m_f.group(1))
+            out["bioavailability"] = val / 100.0 if val > 1 else val
+
     except Exception:
         pass
 
     return out
+
+
 
 def fetch_drug_pharmacokinetics(drug_name: str) -> Dict[str, Any]:
     pk = {"half_life_hr": None, "clearance_L_per_hr": None, "Vd_L": None, "bioavailability": None, "sources": {}}
