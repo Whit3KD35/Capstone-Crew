@@ -5,14 +5,20 @@ from typing import Dict, Tuple, List, Any, Optional
 
 import requests
 from sqlmodel import Session, select
-import xml.etree.ElementTree as ET
 
 from .models import Patient, Medication, Simulation
 
 DEFAULT_HTTP_TIMEOUT = 8
 USER_AGENT = "Capstone-Crew-Pharmaco/1.0 (+https://github.com/Whit3KD35/Capstone-Crew)"
 
-def _safe_get(url: str, params: dict | None = None, headers: dict | None = None, timeout: int = DEFAULT_HTTP_TIMEOUT):
+
+# Network utilities
+def _safe_get(
+    url: str,
+    params: dict | None = None,
+    headers: dict | None = None,
+    timeout: int = DEFAULT_HTTP_TIMEOUT,
+):
     headers = headers or {}
     headers.setdefault("User-Agent", USER_AGENT)
     try:
@@ -21,16 +27,6 @@ def _safe_get(url: str, params: dict | None = None, headers: dict | None = None,
         return r
     except Exception:
         return None
-
-def _time_to_hours(value: float, unit: str) -> float:
-    unit = unit.lower()
-    if unit.startswith("min"):
-        return value / 60.0
-    if unit.startswith("h"):
-        return value
-    if unit.startswith("d"):
-        return value * 24.0
-    return value
 
 
 def _dec_to_float(x: Optional[Decimal | float | int]) -> Optional[float]:
@@ -42,12 +38,70 @@ def _dec_to_float(x: Optional[Decimal | float | int]) -> Optional[float]:
         return float(x)
     return None
 
+
 def _float_to_dec(x: Optional[float]) -> Optional[Decimal]:
     return Decimal(str(x)) if x is not None else None
 
 
-# patient utils
-def compute_creatinine_clearance(age: float, weight_kg: float, serum_creatinine_mg_dl: float, sex: str) -> float:
+# PK text parsing
+def _extract_half_life_hours(raw: str) -> Optional[float]:
+    if not raw:
+        return None
+
+    text = raw
+
+    m = re.search(
+        r"effective\s+half[ -]?life[^.\n\r]*?mean of(?: about)?\s*([0-9]+(?:\.[0-9]+)?)\s*hours",
+        text,
+        re.I,
+    )
+    if m:
+        return float(m.group(1))
+
+    m = re.search(
+        r"effective\s+half[ -]?life[^.\n\r]*?ranges?\s+from\s+([0-9]+(?:\.[0-9]+)?)\s*"
+        r"to\s*([0-9]+(?:\.[0-9]+)?)\s*hours",
+        text,
+        re.I,
+    )
+    if m:
+        low = float(m.group(1))
+        high = float(m.group(2))
+        return (low + high) / 2.0
+
+    m = re.search(
+        r"s-?warfarin[^.\n\r]*?([0-9]+(?:\.[0-9]+)?)\s*-\s*([0-9]+(?:\.[0-9]+)?)\s*hours",
+        text,
+        re.I,
+    )
+    if m:
+        low = float(m.group(1))
+        high = float(m.group(2))
+        return (low + high) / 2.0
+
+    m = re.search(
+        r"half[ -]?life[^0-9\n\r:]*?([0-9]+(?:\.[0-9]+)?)\s*"
+        r"(h|hr|hrs|hour|hours|d|day|days|wk|wks|week|weeks)",
+        text,
+        re.I,
+    )
+    if m:
+        val = float(m.group(1))
+        unit = m.group(2).lower()
+        if unit.startswith("h"):
+            return val
+        elif unit.startswith("d"):
+            return val * 24.0
+        elif unit.startswith("w"):
+            return val * 24.0 * 7.0
+
+    return None
+
+
+# Patient utils
+def compute_creatinine_clearance(
+    age: float, weight_kg: float, serum_creatinine_mg_dl: float, sex: str
+) -> float:
     sex_u = (sex or "").strip().upper()
     if serum_creatinine_mg_dl <= 0:
         raise ValueError("serum_creatinine_mg_dl must be > 0")
@@ -55,6 +109,7 @@ def compute_creatinine_clearance(age: float, weight_kg: float, serum_creatinine_
     if sex_u in ("F", "FEMALE"):
         crcl *= 0.85
     return crcl
+
 
 def ensure_patient_crcl(session: Session, patient: Patient) -> None:
     if patient.creatinine_clearance_ml_min is not None:
@@ -77,14 +132,18 @@ def ensure_patient_crcl(session: Session, patient: Patient) -> None:
     session.commit()
 
 
-# medication fetch + build parameters
+# Drug fetching
 def fetch_from_pubchem(drug_name: str) -> Dict[str, Any]:
-    out = {
+    out: Dict[str, Any] = {
         "raw": None,
         "half_life_hr": None,
         "clearance_L_per_hr": None,
         "Vd_L": None,
         "bioavailability": None,
+        "clearance_raw_value": None,
+        "clearance_raw_unit": None,
+        "Vd_raw_value": None,
+        "Vd_raw_unit": None,
     }
 
     url_cid = (
@@ -133,34 +192,22 @@ def fetch_from_pubchem(drug_name: str) -> Dict[str, Any]:
         if not raw:
             return out
 
-        # Half-life
-        m_half = re.search(
-            r"half[ -]?life[^0-9\n\r:]*?([0-9]+(?:\.[0-9]+)?)\s*"
-            r"(h|hr|hrs|hour|hours|d|day|days|wk|wks|week|weeks)",
-            raw,
-            re.I,
-        )
-        if m_half:
-            val = float(m_half.group(1))
-            unit = m_half.group(2).lower()
-            if unit.startswith("h"):
-                out["half_life_hr"] = val
-            elif unit.startswith("d"):
-                out["half_life_hr"] = val * 24.0
-            elif unit.startswith("w"):
-                out["half_life_hr"] = val * 24.0 * 7.0
+        # half-life
+        half_val = _extract_half_life_hours(raw)
+        if half_val is not None:
+            out["half_life_hr"] = half_val
 
-        # Clearance
+        # clearance
         def _convert_clearance(val: float, unit: str) -> Optional[float]:
-            unit = unit.lower().replace(" ", "")
+            unit_clean = unit.lower().replace(" ", "")
             weight_kg = 70.0
-            if "ml/min/kg" in unit:
+            if "ml/min/kg" in unit_clean:
                 return val * weight_kg / 1000.0 * 60.0
-            if "ml/min" in unit:
+            if "ml/min" in unit_clean:
                 return val / 1000.0 * 60.0
-            if "l/h/kg" in unit or "l/hr/kg" in unit:
+            if "l/h/kg" in unit_clean or "l/hr/kg" in unit_clean:
                 return val * weight_kg
-            if "l/h" in unit or "l/hr" in unit or "lperh" in unit:
+            if "l/h" in unit_clean or "l/hr" in unit_clean or "lperh" in unit_clean:
                 return val
             return None
 
@@ -172,9 +219,12 @@ def fetch_from_pubchem(drug_name: str) -> Dict[str, Any]:
         )
         cl_val: Optional[float] = None
         if m_cl:
-            val = float(m_cl.group(1))
-            unit = m_cl.group(2)
-            cl_val = _convert_clearance(val, unit)
+            raw_val = float(m_cl.group(1))
+            raw_unit = m_cl.group(2).strip()
+            out["clearance_raw_value"] = raw_val
+            out["clearance_raw_unit"] = raw_unit
+            cl_val = _convert_clearance(raw_val, raw_unit)
+
         if cl_val is None:
             m_cl2 = re.search(
                 r"([0-9]+(?:\.[0-9]+)?)\s*"
@@ -183,13 +233,16 @@ def fetch_from_pubchem(drug_name: str) -> Dict[str, Any]:
                 re.I,
             )
             if m_cl2:
-                val = float(m_cl2.group(1))
-                unit = m_cl2.group(2)
-                cl_val = _convert_clearance(val, unit)
+                raw_val = float(m_cl2.group(1))
+                raw_unit = m_cl2.group(2).strip()
+                out["clearance_raw_value"] = raw_val
+                out["clearance_raw_unit"] = raw_unit
+                cl_val = _convert_clearance(raw_val, raw_unit)
+
         if cl_val is not None:
             out["clearance_L_per_hr"] = cl_val
 
-        # Volume of distribution
+        # Vd
         m_vd = re.search(
             r"(volume of distribution|Vd)[^0-9\n\r:]*?"
             r"([0-9]+(?:\.[0-9]+)?)\s*(L\s*/\s*kg|L/kg|L|liters?)",
@@ -197,14 +250,17 @@ def fetch_from_pubchem(drug_name: str) -> Dict[str, Any]:
             re.I,
         )
         if m_vd:
-            val = float(m_vd.group(2))
-            unit = m_vd.group(3).lower().replace(" ", "")
-            if "l/kg" in unit:
-                out["Vd_L"] = val * 70.0
+            raw_val = float(m_vd.group(2))
+            raw_unit = m_vd.group(3).strip()
+            out["Vd_raw_value"] = raw_val
+            out["Vd_raw_unit"] = raw_unit
+            unit_clean = raw_unit.lower().replace(" ", "")
+            if "l/kg" in unit_clean:
+                out["Vd_L"] = raw_val * 70.0
             else:
-                out["Vd_L"] = val
+                out["Vd_L"] = raw_val
 
-        # Bioavailability
+        # bioavailability
         m_f = re.search(
             r"(bioavailability|absolute bioavailability)[^0-9%\n\r:]*?"
             r"([0-9]{1,3}(?:\.[0-9]+)?)\s*%?",
@@ -230,14 +286,17 @@ def fetch_from_pubchem(drug_name: str) -> Dict[str, Any]:
     return out
 
 
-
 def fetch_from_dailymed(drug_name: str) -> Dict[str, Any]:
-    out = {
+    out: Dict[str, Any] = {
         "raw": None,
         "half_life_hr": None,
         "clearance_L_per_hr": None,
         "Vd_L": None,
         "bioavailability": None,
+        "clearance_raw_value": None,
+        "clearance_raw_unit": None,
+        "Vd_raw_value": None,
+        "Vd_raw_unit": None,
     }
 
     search_url = "https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json"
@@ -278,34 +337,22 @@ def fetch_from_dailymed(drug_name: str) -> Dict[str, Any]:
         if not raw:
             return out
 
-        # Half-life
-        m_half = re.search(
-            r"half[ -]?life[^0-9\n\r:]*?([0-9]+(?:\.[0-9]+)?)\s*"
-            r"(h|hr|hrs|hour|hours|d|day|days|wk|wks|week|weeks)",
-            raw,
-            re.I,
-        )
-        if m_half:
-            val = float(m_half.group(1))
-            unit = m_half.group(2).lower()
-            if unit.startswith("h"):
-                out["half_life_hr"] = val
-            elif unit.startswith("d"):
-                out["half_life_hr"] = val * 24.0
-            elif unit.startswith("w"):
-                out["half_life_hr"] = val * 24.0 * 7.0
+        # half-life
+        half_val = _extract_half_life_hours(raw)
+        if half_val is not None:
+            out["half_life_hr"] = half_val
 
-        # Clearance
+        # clearance
         def _convert_clearance(val: float, unit: str) -> Optional[float]:
-            unit = unit.lower().replace(" ", "")
+            unit_clean = unit.lower().replace(" ", "")
             weight_kg = 70.0
-            if "ml/min/kg" in unit:
+            if "ml/min/kg" in unit_clean:
                 return val * weight_kg / 1000.0 * 60.0
-            if "ml/min" in unit:
+            if "ml/min" in unit_clean:
                 return val / 1000.0 * 60.0
-            if "l/h/kg" in unit or "l/hr/kg" in unit:
+            if "l/h/kg" in unit_clean or "l/hr/kg" in unit_clean:
                 return val * weight_kg
-            if "l/h" in unit or "l/hr" in unit or "lperh" in unit:
+            if "l/h" in unit_clean or "l/hr" in unit_clean or "lperh" in unit_clean:
                 return val
             return None
 
@@ -316,13 +363,16 @@ def fetch_from_dailymed(drug_name: str) -> Dict[str, Any]:
             re.I,
         )
         if m_cl:
-            val = float(m_cl.group(1))
-            unit = m_cl.group(2)
-            cl_val = _convert_clearance(val, unit)
+            raw_val = float(m_cl.group(1))
+            raw_unit = m_cl.group(2).strip()
+            out["clearance_raw_value"] = raw_val
+            out["clearance_raw_unit"] = raw_unit
+
+            cl_val = _convert_clearance(raw_val, raw_unit)
             if cl_val is not None:
                 out["clearance_L_per_hr"] = cl_val
 
-        # Volume of distribution
+        # Vd
         m_vd = re.search(
             r"(volume of distribution|Vd)[^0-9\n\r:]*?"
             r"([0-9]+(?:\.[0-9]+)?)\s*(L\s*/\s*kg|L/kg|L|liters?)",
@@ -330,14 +380,18 @@ def fetch_from_dailymed(drug_name: str) -> Dict[str, Any]:
             re.I,
         )
         if m_vd:
-            val = float(m_vd.group(2))
-            unit = m_vd.group(3).lower().replace(" ", "")
-            if "l/kg" in unit:
-                out["Vd_L"] = val * 70.0
-            else:
-                out["Vd_L"] = val
+            raw_val = float(m_vd.group(2))
+            raw_unit = m_vd.group(3).strip()
+            out["Vd_raw_value"] = raw_val
+            out["Vd_raw_unit"] = raw_unit
 
-        # Bioavailability
+            unit_clean = raw_unit.lower().replace(" ", "")
+            if "l/kg" in unit_clean:
+                out["Vd_L"] = raw_val * 70.0
+            else:
+                out["Vd_L"] = raw_val
+
+        # bioavailability
         m_f = re.search(
             r"(bioavailability|absolute bioavailability)[^0-9%\n\r:]*?"
             r"([0-9]{1,3}(?:\.[0-9]+)?)\s*%?",
@@ -363,15 +417,33 @@ def fetch_from_dailymed(drug_name: str) -> Dict[str, Any]:
     return out
 
 
-
 def fetch_drug_pharmacokinetics(drug_name: str) -> Dict[str, Any]:
-    pk = {"half_life_hr": None, "clearance_L_per_hr": None, "Vd_L": None, "bioavailability": None, "sources": {}}
+    pk: Dict[str, Any] = {
+        "half_life_hr": None,
+        "clearance_L_per_hr": None,
+        "Vd_L": None,
+        "bioavailability": None,
+        "clearance_raw_value": None,
+        "clearance_raw_unit": None,
+        "Vd_raw_value": None,
+        "Vd_raw_unit": None,
+        "sources": {},
+    }
 
     try:
         dm = fetch_from_dailymed(drug_name)
         pk["sources"]["dailymed"] = dm.get("raw")
-        for k in ("half_life_hr", "clearance_L_per_hr", "Vd_L", "bioavailability"):
-            if pk[k] is None and dm.get(k) is not None:
+        for k in (
+            "half_life_hr",
+            "clearance_L_per_hr",
+            "Vd_L",
+            "bioavailability",
+            "clearance_raw_value",
+            "clearance_raw_unit",
+            "Vd_raw_value",
+            "Vd_raw_unit",
+        ):
+            if pk.get(k) is None and dm.get(k) is not None:
                 pk[k] = dm.get(k)
     except Exception:
         pass
@@ -379,14 +451,28 @@ def fetch_drug_pharmacokinetics(drug_name: str) -> Dict[str, Any]:
     try:
         pc = fetch_from_pubchem(drug_name)
         pk["sources"]["pubchem"] = pc.get("raw")
-        for k in ("half_life_hr", "clearance_L_per_hr", "Vd_L", "bioavailability"):
-            if pk[k] is None and pc.get(k) is not None:
+        for k in (
+            "half_life_hr",
+            "clearance_L_per_hr",
+            "Vd_L",
+            "bioavailability",
+            "clearance_raw_value",
+            "clearance_raw_unit",
+            "Vd_raw_value",
+            "Vd_raw_unit",
+        ):
+            if pk.get(k) is None and pc.get(k) is not None:
                 pk[k] = pc.get(k)
     except Exception:
         pass
 
+    # half-life from CL + Vd
     try:
-        if pk["half_life_hr"] is None and pk["Vd_L"] is not None and pk["clearance_L_per_hr"] is not None:
+        if (
+            pk["half_life_hr"] is None
+            and pk["Vd_L"] is not None
+            and pk["clearance_L_per_hr"] is not None
+        ):
             pk["half_life_hr"] = 0.693 * (pk["Vd_L"] / pk["clearance_L_per_hr"])
     except Exception:
         pass
@@ -394,7 +480,7 @@ def fetch_drug_pharmacokinetics(drug_name: str) -> Dict[str, Any]:
     return pk
 
 
-# simulation core
+# Simulation core
 def predict_concentration_timecourse(
     drug_params: Dict[str, Optional[float]],
     dosing_mg: float,
@@ -403,29 +489,36 @@ def predict_concentration_timecourse(
     absorption_rate_hr: Optional[float] = None,
     body_weight_kg: Optional[float] = None,
     t_end_hr: Optional[float] = None,
-    dt_hr: float = 0.1
+    dt_hr: float = 0.1,
 ) -> Tuple[List[float], List[float]]:
     half = drug_params.get("half_life_hr")
     CL = drug_params.get("clearance_L_per_hr")
     Vd = drug_params.get("Vd_L")
     F = drug_params.get("bioavailability")
 
+    # bioavailability (no guessing for non-IV)
     if F is None:
-        F = 0.5 if absorption_rate_hr else 1.0
+        if absorption_rate_hr is not None:
+            raise ValueError(
+                "bioavailability_f is required for non-IV dosing (absorption_rate_hr set)"
+            )
+        F = 1.0
 
-    if Vd is None and body_weight_kg:
-        Vd = 0.6 * body_weight_kg
-
+    # CL from half-life + Vd
     if CL is None and half and Vd:
         CL = 0.693 * Vd / half
 
     if CL is None or Vd is None:
-        raise ValueError("Insufficient PK parameters: need Vd_L and clearance_L_per_hr (or half_life and one of them)")
+        raise ValueError(
+            "Insufficient PK parameters: need Vd_L and clearance_L_per_hr "
+            "(or half_life_hr plus one of them)"
+        )
 
     kel = CL / Vd
     if half is None:
         half = 0.693 / kel
 
+    # simulate through dosing + ~5 half-lives
     if t_end_hr is None:
         t_end_hr = (num_doses * dosing_interval_hr) + (5.0 * half)
 
@@ -439,6 +532,7 @@ def predict_concentration_timecourse(
 
     t = 0.0
     while t <= t_end_hr + 1e-9:
+        # dosing
         for td in dose_times:
             if abs(t - td) < dt_hr / 2.0:
                 if ka is not None:
@@ -446,6 +540,7 @@ def predict_concentration_timecourse(
                 else:
                     A_central_mg += dosing_mg * F
 
+        # absorption
         if ka is not None:
             absorbed = ka * A_gut_mg * dt_hr
             if absorbed > A_gut_mg:
@@ -453,6 +548,7 @@ def predict_concentration_timecourse(
             A_gut_mg -= absorbed
             A_central_mg += absorbed * F
 
+        # elimination
         elim = (CL / Vd) * A_central_mg * dt_hr
         if elim > A_central_mg:
             elim = A_central_mg
@@ -466,16 +562,39 @@ def predict_concentration_timecourse(
     return times, conc
 
 
-def evaluate_therapeutic_window(times: List[float], conc: List[float], therapeutic_min_mg_per_L: float, therapeutic_max_mg_per_L: float) -> Dict[str, Any]:
+def evaluate_therapeutic_window(
+    times: List[float],
+    conc: List[float],
+    therapeutic_min_mg_per_L: float,
+    therapeutic_max_mg_per_L: float,
+    t_start_hr: Optional[float] = None,
+    t_end_hr: Optional[float] = None,
+) -> Dict[str, Any]:
     if len(times) != len(conc):
         raise ValueError("times and conc must be same length")
 
     total = 0.0
     below = within = above = 0.0
+
+    # optional window (only during active therapy)
     for i in range(len(times) - 1):
-        dt = times[i + 1] - times[i]
+        seg_start = times[i]
+        seg_end = times[i + 1]
+        dt = seg_end - seg_start
+
+        if dt <= 0:
+            continue
+
+        if t_start_hr is not None or t_end_hr is not None:
+            mid_t = 0.5 * (seg_start + seg_end)
+            if t_start_hr is not None and mid_t < t_start_hr:
+                continue
+            if t_end_hr is not None and mid_t > t_end_hr:
+                continue
+
         total += dt
         c = conc[i]
+
         if c < therapeutic_min_mg_per_L:
             below += dt
         elif c > therapeutic_max_mg_per_L:
@@ -487,13 +606,40 @@ def evaluate_therapeutic_window(times: List[float], conc: List[float], therapeut
     pct_within = (within / total * 100.0) if total > 0 else 0.0
     pct_above = (above / total * 100.0) if total > 0 else 0.0
 
+    # policy targets
+    target_below_pct = 20.0   # max time allowed below
+    target_above_pct = 5.0    # max time allowed above
+    target_within_pct = 50.0  # min time desired in range
+
+    # gap vs targets (in percentage)
+    below_gap_pct = max(0.0, pct_below - target_below_pct)
+    above_gap_pct = max(0.0, pct_above - target_above_pct)
+    within_gap_pct = max(0.0, target_within_pct - pct_within)
+
+    # normalized scores
+    below_score = below_gap_pct / target_below_pct if target_below_pct > 0 else 0.0
+    above_score = above_gap_pct / target_above_pct if target_above_pct > 0 else 0.0
+    within_score = within_gap_pct / target_within_pct if target_within_pct > 0 else 0.0
+
+    off_score = max(below_score, above_score, within_score)
+
     alerts: List[str] = []
-    if pct_above > 5.0:
+    if pct_above > target_above_pct:
         alerts.append("HIGH_RISK: concentration above therapeutic max for >5% of period")
-    if pct_below > 20.0:
+    if pct_below > target_below_pct:
         alerts.append("LOW_RISK: concentration below therapeutic min for >20% of period")
-    if pct_within < 50.0:
+    if pct_within < target_within_pct:
         alerts.append("SUBOPTIMAL: concentration within therapeutic window <50% of period")
+
+    # ADE risk label
+    if off_score == 0.0:
+        ade_risk_level = "NONE"
+    elif off_score <= 0.5:
+        ade_risk_level = "LOW"
+    elif off_score <= 1.5:
+        ade_risk_level = "MODERATE"
+    else:
+        ade_risk_level = "HIGH"
 
     return {
         "pct_below": pct_below,
@@ -503,18 +649,66 @@ def evaluate_therapeutic_window(times: List[float], conc: List[float], therapeut
         "time_within_hr": within,
         "time_above_hr": above,
         "alerts": alerts,
+        "target_below_pct": target_below_pct,
+        "target_above_pct": target_above_pct,
+        "target_within_pct": target_within_pct,
+        "below_gap_pct": below_gap_pct,
+        "above_gap_pct": above_gap_pct,
+        "within_gap_pct": within_gap_pct,
+        "off_score": off_score,
+        "ade_risk_level": ade_risk_level,
     }
 
 
-def build_drug_params_from_db(med: Medication, fallback_weight_kg: Optional[float] = None) -> Dict[str, Optional[float]]:
+# Building PK from DB
+def _convert_clearance_from_raw(
+    val: float, unit: str, weight_kg: Optional[float]
+) -> Optional[float]:
+    unit_clean = unit.lower().replace(" ", "")
+    ref_weight = weight_kg if weight_kg is not None else 70.0
+    if "ml/min/kg" in unit_clean:
+        return val * ref_weight / 1000.0 * 60.0
+    if "ml/min" in unit_clean:
+        return val / 1000.0 * 60.0
+    if "l/h/kg" in unit_clean or "l/hr/kg" in unit_clean:
+        return val * ref_weight
+    if "l/h" in unit_clean or "l/hr" in unit_clean or "lperh" in unit_clean:
+        return val
+    return None
+
+
+def _convert_vd_from_raw(
+    val: float, unit: str, weight_kg: Optional[float]
+) -> Optional[float]:
+    unit_clean = unit.lower().replace(" ", "")
+    ref_weight = weight_kg if weight_kg is not None else 70.0
+    if "l/kg" in unit_clean:
+        return val * ref_weight
+    return val
+
+
+def build_drug_params_from_db(
+    med: Medication, fallback_weight_kg: Optional[float] = None
+) -> Dict[str, Optional[float]]:
     half = _dec_to_float(med.half_life_hr)
-    cl = _dec_to_float(med.clearance_l_hr)
-    vd = _dec_to_float(med.volume_of_distribution_l)
     f = _dec_to_float(med.bioavailability_f)
 
-    if vd is None and fallback_weight_kg:
-        vd = 0.6 * fallback_weight_kg
+    cl: Optional[float] = None
+    vd: Optional[float] = None
 
+    if med.clearance_raw_value is not None and med.clearance_raw_unit:
+        raw_cl_val = _dec_to_float(med.clearance_raw_value)
+        if raw_cl_val is not None:
+            cl = _convert_clearance_from_raw(raw_cl_val, med.clearance_raw_unit, fallback_weight_kg)
+
+    if med.volume_of_distribution_raw_value is not None and med.volume_of_distribution_raw_unit:
+        raw_vd_val = _dec_to_float(med.volume_of_distribution_raw_value)
+        if raw_vd_val is not None:
+            vd = _convert_vd_from_raw(
+                raw_vd_val, med.volume_of_distribution_raw_unit, fallback_weight_kg
+            )
+
+    # CL from half-life + Vd
     if cl is None and half is not None and vd is not None:
         cl = 0.693 * vd / half
 
@@ -525,25 +719,37 @@ def build_drug_params_from_db(med: Medication, fallback_weight_kg: Optional[floa
         "bioavailability": f,
     }
 
+
 def maybe_enrich_medication_from_sources(session: Session, med: Medication) -> None:
     params = build_drug_params_from_db(med)
-    if all(v is not None for v in params.values()):
+    # already have Vd and (CL or half-life)
+    if params["Vd_L"] is not None and (
+        params["clearance_L_per_hr"] is not None or params["half_life_hr"] is not None
+    ):
         return
 
     fetched = fetch_drug_pharmacokinetics(med.name)
 
     if med.half_life_hr is None and fetched.get("half_life_hr") is not None:
         med.half_life_hr = _float_to_dec(fetched["half_life_hr"])
-    if med.clearance_l_hr is None and fetched.get("clearance_L_per_hr") is not None:
-        med.clearance_l_hr = _float_to_dec(fetched["clearance_L_per_hr"])
-    if med.volume_of_distribution_l is None and fetched.get("Vd_L") is not None:
-        med.volume_of_distribution_l = _float_to_dec(fetched["Vd_L"])
     if med.bioavailability_f is None and fetched.get("bioavailability") is not None:
         med.bioavailability_f = _float_to_dec(fetched["bioavailability"])
+
+    if med.clearance_raw_value is None and fetched.get("clearance_raw_value") is not None:
+        med.clearance_raw_value = _float_to_dec(fetched["clearance_raw_value"])
+    if med.clearance_raw_unit is None and fetched.get("clearance_raw_unit") is not None:
+        med.clearance_raw_unit = fetched["clearance_raw_unit"]
+
+    if med.volume_of_distribution_raw_value is None and fetched.get("Vd_raw_value") is not None:
+        med.volume_of_distribution_raw_value = _float_to_dec(fetched["Vd_raw_value"])
+    if med.volume_of_distribution_raw_unit is None and fetched.get("Vd_raw_unit") is not None:
+        med.volume_of_distribution_raw_unit = fetched["Vd_raw_unit"]
 
     session.add(med)
     session.commit()
 
+
+# Simulation storage
 def simulate_and_store(
     session: Session,
     patient_id: str,
@@ -562,8 +768,31 @@ def simulate_and_store(
     ensure_patient_crcl(session, pat)
     maybe_enrich_medication_from_sources(session, med)
 
-    weight_kg = _dec_to_float(pat.weight_kg) or (float(pat.weight) if pat.weight is not None else None)
+    weight_kg = _dec_to_float(pat.weight_kg) or (
+        float(pat.weight) if pat.weight is not None else None
+    )
     drug_params = build_drug_params_from_db(med, fallback_weight_kg=weight_kg)
+
+    half = drug_params["half_life_hr"]
+    cl = drug_params["clearance_L_per_hr"]
+    vd = drug_params["Vd_L"]
+
+    missing_msgs: List[str] = []
+    if vd is None:
+        missing_msgs.append(
+            "- Vd_L (volume_of_distribution_raw_value + volume_of_distribution_raw_unit)"
+        )
+    if cl is None and half is None:
+        missing_msgs.append(
+            "- clearance or half_life_hr "
+            "(clearance_raw_value + clearance_raw_unit, or half_life_hr)"
+        )
+
+    if missing_msgs:
+        raise ValueError(
+            f"Missing PK parameters for medication '{med.name}'.\n"
+            "Required fields:\n" + "\n".join(missing_msgs)
+        )
 
     times, conc = predict_concentration_timecourse(
         drug_params=drug_params,
@@ -577,7 +806,16 @@ def simulate_and_store(
 
     tw_low = _dec_to_float(med.therapeutic_window_lower_mg_l) or 0.0
     tw_high = _dec_to_float(med.therapeutic_window_upper_mg_l) or 1e9
-    eval_res = evaluate_therapeutic_window(times, conc, tw_low, tw_high)
+
+    therapy_end = interval_hr * num_doses
+    eval_res = evaluate_therapeutic_window(
+        times,
+        conc,
+        tw_low,
+        tw_high,
+        t_start_hr=0.0,
+        t_end_hr=therapy_end,
+    )
 
     cmax = max(conc) if conc else None
     cmin = min(conc) if conc else None
