@@ -1,6 +1,6 @@
 import uuid
 
-from typing import Any
+from typing import Any, Optional
 from datetime import datetime
 from decimal import Decimal
 
@@ -99,3 +99,9 @@ class Simulation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
 
     patient: Patient = Relationship(back_populates="simulations")
+
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    hashedPassword: str
