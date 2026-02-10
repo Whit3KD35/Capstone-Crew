@@ -1,6 +1,6 @@
 import uuid
 
-from typing import Any
+from typing import Any, Optional
 from datetime import datetime
 from decimal import Decimal
 
@@ -8,13 +8,16 @@ from sqlmodel import SQLModel, Field, Column, Relationship
 from pydantic import EmailStr, BaseModel
 from sqlalchemy.dialects.postgresql import JSONB
 
+
 class Test(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str | None = None
 
+
 class LoginRequest(BaseModel):
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     password: str = Field(min_length=8, max_length=40)
+
 
 class Clinician(SQLModel, table=True):
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -22,11 +25,16 @@ class Clinician(SQLModel, table=True):
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     password: str = Field(min_length=8, max_length=40)
 
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 class PatientMedicationLink(SQLModel, table=True):
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
     patient_id: uuid.UUID = Field(foreign_key="patient.id")
     medication_id: uuid.UUID = Field(foreign_key="medication.id")
     is_active: bool = True
+
 
 class Patient(SQLModel, table=True):
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -34,7 +42,6 @@ class Patient(SQLModel, table=True):
     number: str | None = None
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     age: int | None = None
-    weight: int | None = None
     sex: str | None = None
 
     full_name: str | None = None
@@ -44,11 +51,17 @@ class Patient(SQLModel, table=True):
     creatinine_clearance_ml_min: Decimal | None = None
     ckd_stage: str | None = None
 
+<<<<<<< Updated upstream
     medications: list['Medication'] | None = Relationship(
         back_populates='patients',
+=======
+    medications: list["Medication"] | None = Relationship(
+        back_populates="patients",
+>>>>>>> Stashed changes
         link_model=PatientMedicationLink
     )
     simulations: list["Simulation"] = Relationship(back_populates="patient")
+
 
 class Medication(SQLModel, table=True):
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -56,12 +69,30 @@ class Medication(SQLModel, table=True):
     generic_name: str | None = None
 
     half_life_hr: Decimal | None = None
+<<<<<<< Updated upstream
     clearance_l_hr: Decimal | None = None
     volume_of_distribution_l: Decimal | None = None
     bioavailability_f: Decimal | None = None
     therapeutic_window_lower_mg_l: Decimal | None = None
     therapeutic_window_upper_mg_l: Decimal | None = None
     source_url: str | None = None
+=======
+    bioavailability_f: Decimal | None = None
+
+    clearance_raw_value: Decimal | None = None
+    clearance_raw_unit: str | None = None
+    volume_of_distribution_raw_value: Decimal | None = None
+    volume_of_distribution_raw_unit: str | None = None
+
+    therapeutic_window_lower_mg_l: Decimal | None = None
+    therapeutic_window_upper_mg_l: Decimal | None = None
+    source_url: str | None = None
+
+    patients: list[Patient] | None = Relationship(
+        back_populates="medications",
+        link_model=PatientMedicationLink
+    )
+>>>>>>> Stashed changes
 
     patients: list[Patient] | None = Relationship(
         back_populates='medications',
@@ -89,3 +120,12 @@ class Simulation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
 
     patient: Patient = Relationship(back_populates="simulations")
+<<<<<<< Updated upstream
+=======
+
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    hashedPassword: str
+>>>>>>> Stashed changes

@@ -10,13 +10,11 @@ from ...models import Clinician
 router = APIRouter(prefix="/clinicians", tags=["clinicians"])
 
 class ClinicianCreate(BaseModel):
-
     email: EmailStr
     password: str
-
     first_name: Optional[str] = None
-    last_name: Optional[str]  = None
-    name: Optional[str]       = None
+    last_name: Optional[str] = None
+    name: Optional[str] = None
 
 def as_public_dict(row: Clinician) -> dict[str, Any]:
     """Serialize a Clinician without sensitive fields, regardless of column names."""
