@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.db import create_tables
-from app.api.routes import clinicians, patients, simulations, login, medications, pk
+from app.api.routes import clinicians, patients, simulations, login, medications, pk, patient_login
 
 
 @asynccontextmanager
@@ -14,11 +14,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Capstone Backend", lifespan=lifespan)
-
+"""
 # CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+"""
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",   # Vite frontend
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",   # Swagger
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,3 +45,4 @@ app.include_router(simulations.router)  # <-- sims
 app.include_router(login.router)
 app.include_router(medications.router)
 app.include_router(pk.router)
+app.include_router(patient_login.router)

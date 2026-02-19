@@ -3,7 +3,9 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from sqlmodel import Session, select
 from ...core.db import get_session
+from ...core.patient_auth import get_current_patient
 from ...models import Patient
+
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -33,7 +35,7 @@ class PatientUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     weight_kg: Optional[float] = None
-
+"""
 @router.get("/")
 def list_patients(session: Session = Depends(get_session)):
     return session.exec(select(Patient)).all()
@@ -60,6 +62,35 @@ def update_patient_by_email(email: str, body: PatientUpdate, session: Session = 
         raise HTTPException(status_code=404, detail="Patient not found")
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(patient, k, v)
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    return patient
+"""
+@router.get("/me")
+def get_my_profile(
+    session: Session = Depends(get_session),
+    user: dict = Depends(get_current_patient),
+):
+    patient = session.get(Patient, user["patient_id"])
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient
+
+
+@router.post("/me")
+def update_my_profile(
+    body: PatientUpdate,
+    session: Session = Depends(get_session),
+    user: dict = Depends(get_current_patient),
+):
+    patient = session.get(Patient, user["patient_id"])
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    for k, v in body.model_dump(exclude_none=True).items():
+        setattr(patient, k, v)
+
     session.add(patient)
     session.commit()
     session.refresh(patient)
