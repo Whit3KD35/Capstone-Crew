@@ -1,6 +1,7 @@
 # Environment / secret files
 .env
 .env.*
+backend/.env
 *.key
 *.pem
 
