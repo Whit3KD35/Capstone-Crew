@@ -19,8 +19,8 @@ def decrypt_patient(p: Patient):
         "age": p.age,
         "sex": p.sex,
         "weight_kg": p.weight_kg,
-        "serum_creatinine_mg_dl": float(decryptData(p.serum_creatinine_mg_dl)) if p.serum_creatinine_mg_dl else None,
-        "creatinine_clearance_ml_min": float(decryptData(p.creatinine_clearance_ml_min)) if p.creatinine_clearance_ml_min else None,
+        "serum_creatinine_mg_dl": p.serum_creatinine_mg_dl if p.serum_creatinine_mg_dl else None,
+        "creatinine_clearance_ml_min": p.creatinine_clearance_ml_min if p.creatinine_clearance_ml_min else None,
         "ckd_stage": decryptData(p.ckd_stage) if p.ckd_stage else None
     }
 
@@ -67,8 +67,8 @@ def create_patient_basic(body: PatientCreate, session: Session = Depends(get_ses
     age=body.age,
     sex=body.sex,
     weight_kg=body.weight_kg,
-    serum_creatinine_mg_dl=encryptData(str(body.serum_creatinine_mg_dl)) if body.serum_creatinine_mg_dl else None,
-    creatinine_clearance_ml_min=encryptData(str(body.creatinine_clearance_ml_min)) if body.creatinine_clearance_ml_min else None,
+    serum_creatinine_mg_dl=body.serum_creatinine_mg_dl if body.serum_creatinine_mg_dl else None,
+    creatinine_clearance_ml_min=body.creatinine_clearance_ml_min if body.creatinine_clearance_ml_min else None,
     ckd_stage=encryptData(body.ckd_stage) if body.ckd_stage else None
     )
     session.add(p)

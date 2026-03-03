@@ -30,7 +30,7 @@ def decryptData(token: str) -> str:
 #print(">>> USING app/core/security.py <<<")
 
 from passlib.context import CryptContext
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 import os
 
 pwdContext = CryptContext(
@@ -56,4 +56,10 @@ def encryptData(data: str) -> str:
     return getFernet().encrypt(data.encode()).decode()
 
 def decryptData(token: str) -> str:
-    return getFernet().decrypt(token.encode()).decode()
+    if token is None:
+        return None
+
+    try:
+        return getFernet().decrypt(token.encode()).decode()
+    except InvalidToken:
+        return token
