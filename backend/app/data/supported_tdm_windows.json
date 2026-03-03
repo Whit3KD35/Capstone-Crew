@@ -1,0 +1,32 @@
+[
+  {
+    "drug_name": "Lithium Carbonate",
+    "lower_mg_l": 4.2,
+    "upper_mg_l": 8.3,
+    "basis": "0.6-1.2 mEq/L elemental lithium"
+  },
+  {
+    "drug_name": "Phenytoin",
+    "lower_mg_l": 10.0,
+    "upper_mg_l": 20.0,
+    "basis": "10-20 mcg/mL total phenytoin"
+  },
+  {
+    "drug_name": "Valproic Acid",
+    "lower_mg_l": 50.0,
+    "upper_mg_l": 100.0,
+    "basis": "50-100 mcg/mL total valproate"
+  },
+  {
+    "drug_name": "Theophylline",
+    "lower_mg_l": 10.0,
+    "upper_mg_l": 20.0,
+    "basis": "10-20 mcg/mL"
+  },
+  {
+    "drug_name": "Carbamazepine",
+    "lower_mg_l": 4.0,
+    "upper_mg_l": 12.0,
+    "basis": "4-12 mcg/mL"
+  }
+]

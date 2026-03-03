@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { api, type Medication } from "../api";
+import { api, type Medication, type PkFetchResponse, type WindowReview } from "../api";
 import {
   ResponsiveContainer,
   LineChart,
@@ -28,6 +28,27 @@ type TherapeuticEval = {
   time_below_hr: number;
 };
 
+type PatientContext = {
+  patient_id: string;
+  age?: number | null;
+  sex?: string | null;
+  weight_kg?: number | null;
+  serum_creatinine_mg_dl?: number | null;
+  creatinine_clearance_ml_min?: number | null;
+  ckd_stage?: string | null;
+  height_cm?: number | null;
+  is_pregnant?: boolean | null;
+  pregnancy_trimester?: string | null;
+  is_breastfeeding?: boolean | null;
+  liver_disease_status?: string | null;
+  albumin_g_dl?: number | null;
+  systolic_bp_mm_hg?: number | null;
+  diastolic_bp_mm_hg?: number | null;
+  heart_rate_bpm?: number | null;
+  conditions?: string[] | null;
+  current_medications?: string[] | null;
+};
+
 type SimulationResult = {
   id: string;
   patient_id: string;
@@ -40,7 +61,29 @@ type SimulationResult = {
   auc_mg_h_l: number;
   flag_too_high: boolean;
   flag_too_low: boolean;
+  patient_context?: PatientContext;
+  therapeutic_window?: {
+    lower_mg_l?: number;
+    upper_mg_l?: number;
+    source?: string;
+  };
   therapeutic_eval: TherapeuticEval;
+  params_used?: {
+    suggested_input_dose_mg_for_mid_window?: number | null;
+    dose_input_mg?: number;
+    dose_modeled_mg?: number;
+    active_moiety_fraction?: number;
+    recommended_regimens?: Array<{
+      dose_mg: number;
+      interval_hr: number;
+      num_doses: number;
+      pct_within: number;
+      pct_below: number;
+      pct_above: number;
+      risk: string;
+      meets_goal_96pct: boolean;
+    }>;
+  };
   times_hr: number[];
   conc_mg_per_L: number[];
 };
@@ -63,8 +106,20 @@ export default function Simulation() {
   const [absorption_rate_hr, setAbsorptionRateHr] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [fetchingPk, setFetchingPk] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SimulationResult | null>(null);
+  const [pkFetchResult, setPkFetchResult] = useState<PkFetchResponse | null>(null);
+  const [fetchMedName, setFetchMedName] = useState("");
+  const [fetchUpsert, setFetchUpsert] = useState(true);
+  const [windowReview, setWindowReview] = useState<WindowReview | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [manualLow, setManualLow] = useState("");
+  const [manualHigh, setManualHigh] = useState("");
+  const [queueCount, setQueueCount] = useState<number>(0);
 
   // new-med form
   const [showNewMed, setShowNewMed] = useState(false);
@@ -76,11 +131,25 @@ export default function Simulation() {
   const [newMedWinHigh, setNewMedWinHigh] = useState("");
   const [savingMed, setSavingMed] = useState(false);
   const [newMedErr, setNewMedErr] = useState<string | null>(null);
+  const [showEditMed, setShowEditMed] = useState(false);
+  const [editMedGenericName, setEditMedGenericName] = useState("");
+  const [editMedHalfLife, setEditMedHalfLife] = useState("");
+  const [editMedBioavailability, setEditMedBioavailability] = useState("");
+  const [editMedClrRawValue, setEditMedClrRawValue] = useState("");
+  const [editMedClrRawUnit, setEditMedClrRawUnit] = useState("");
+  const [editMedVdRawValue, setEditMedVdRawValue] = useState("");
+  const [editMedVdRawUnit, setEditMedVdRawUnit] = useState("");
+  const [editMedWinLow, setEditMedWinLow] = useState("");
+  const [editMedWinHigh, setEditMedWinHigh] = useState("");
+  const [editMedSourceUrl, setEditMedSourceUrl] = useState("");
+  const [updatingMed, setUpdatingMed] = useState(false);
+  const [deletingMed, setDeletingMed] = useState(false);
+  const [editMedErr, setEditMedErr] = useState<string | null>(null);
 
   // load medications
   useEffect(() => {
     api
-      .listMedications()
+      .listSimulationMedications()
       .then((ms) => {
         setMedications(ms);
         if (initialMedId) {
@@ -94,6 +163,51 @@ export default function Simulation() {
         setError("Failed to load medications.");
       });
   }, [initialMedId]);
+
+  useEffect(() => {
+    if (!selectedMedId) return;
+    setReviewLoading(true);
+    api
+      .getMedicationWindowReview(selectedMedId)
+      .then((r) => setWindowReview(r))
+      .catch(() => setWindowReview(null))
+      .finally(() => setReviewLoading(false));
+  }, [selectedMedId]);
+
+  useEffect(() => {
+    api
+      .listWindowReviewQueue()
+      .then((rows) => setQueueCount(rows.length))
+      .catch(() => setQueueCount(0));
+  }, [windowReview]);
+
+  useEffect(() => {
+    const med = medications.find((m) => m.id === selectedMedId);
+    if (!med) return;
+    setEditMedGenericName(med.generic_name ?? "");
+    setEditMedHalfLife(med.half_life_hr != null ? String(med.half_life_hr) : "");
+    setEditMedBioavailability(med.bioavailability_f != null ? String(med.bioavailability_f) : "");
+    setEditMedClrRawValue(med.clearance_raw_value != null ? String(med.clearance_raw_value) : "");
+    setEditMedClrRawUnit(med.clearance_raw_unit ?? "");
+    setEditMedVdRawValue(
+      med.volume_of_distribution_raw_value != null
+        ? String(med.volume_of_distribution_raw_value)
+        : ""
+    );
+    setEditMedVdRawUnit(med.volume_of_distribution_raw_unit ?? "");
+    setEditMedWinLow(
+      med.therapeutic_window_lower_mg_l != null
+        ? String(med.therapeutic_window_lower_mg_l)
+        : ""
+    );
+    setEditMedWinHigh(
+      med.therapeutic_window_upper_mg_l != null
+        ? String(med.therapeutic_window_upper_mg_l)
+        : ""
+    );
+    setEditMedSourceUrl(med.source_url ?? "");
+    setEditMedErr(null);
+  }, [selectedMedId, medications]);
 
   const handleCreateMedication = async () => {
     setNewMedErr(null);
@@ -166,6 +280,153 @@ export default function Simulation() {
     }
   };
 
+  const handleUpdateMedication = async () => {
+    setEditMedErr(null);
+    if (!selectedMed) {
+      setEditMedErr("Select a medication first.");
+      return;
+    }
+    try {
+      setUpdatingMed(true);
+      await api.updateMedication(selectedMed.name, {
+        generic_name: editMedGenericName.trim() || undefined,
+        half_life_hr: editMedHalfLife.trim() ? Number(editMedHalfLife) : undefined,
+        bioavailability_f: editMedBioavailability.trim()
+          ? Number(editMedBioavailability)
+          : undefined,
+        clearance_raw_value: editMedClrRawValue.trim()
+          ? Number(editMedClrRawValue)
+          : undefined,
+        clearance_raw_unit: editMedClrRawUnit.trim() || undefined,
+        volume_of_distribution_raw_value: editMedVdRawValue.trim()
+          ? Number(editMedVdRawValue)
+          : undefined,
+        volume_of_distribution_raw_unit: editMedVdRawUnit.trim() || undefined,
+        therapeutic_window_lower_mg_l: editMedWinLow.trim() ? Number(editMedWinLow) : undefined,
+        therapeutic_window_upper_mg_l: editMedWinHigh.trim()
+          ? Number(editMedWinHigh)
+          : undefined,
+        source_url: editMedSourceUrl.trim() || undefined,
+      });
+      const refreshed = await api.listSimulationMedications();
+      setMedications(refreshed);
+      const stillSelected = refreshed.find((m) => m.id === selectedMedId);
+      if (!stillSelected && refreshed.length > 0) {
+        setSelectedMedId(refreshed[0].id);
+      }
+    } catch (e: any) {
+      setEditMedErr(typeof e === "string" ? e : e?.message || "Failed to update medication.");
+    } finally {
+      setUpdatingMed(false);
+    }
+  };
+
+  const handleDeleteMedication = async () => {
+    setEditMedErr(null);
+    if (!selectedMed) {
+      setEditMedErr("Select a medication first.");
+      return;
+    }
+    const ok = window.confirm(
+      `Delete medication "${selectedMed.name}"? This also removes related simulation and patient-medication link rows.`
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingMed(true);
+      await api.deleteMedication(selectedMed.name);
+      const refreshed = await api.listSimulationMedications();
+      setMedications(refreshed);
+      setResult(null);
+      setWindowReview(null);
+      if (refreshed.length > 0) {
+        setSelectedMedId(refreshed[0].id);
+      } else {
+        setSelectedMedId("");
+      }
+      setShowEditMed(false);
+    } catch (e: any) {
+      setEditMedErr(typeof e === "string" ? e : e?.message || "Failed to delete medication.");
+    } finally {
+      setDeletingMed(false);
+    }
+  };
+
+  const handleFetchPk = async () => {
+    setError(null);
+    setPkFetchResult(null);
+
+    const targetName = fetchMedName.trim();
+    if (!targetName) {
+      setError("Enter a medication name in 'Fetch PK For'.");
+      return;
+    }
+
+    try {
+      setFetchingPk(true);
+      const fetched = await api.fetchMedicationPk(targetName, fetchUpsert);
+      setPkFetchResult(fetched);
+
+      if (fetchUpsert) {
+        const refreshed = await api.listSimulationMedications();
+        setMedications(refreshed);
+        const matched = refreshed.find(
+          (m) => m.name.toLowerCase() === targetName.toLowerCase()
+        );
+        if (matched) {
+          setSelectedMedId(matched.id);
+          const review = await api.getMedicationWindowReview(matched.id);
+          setWindowReview(review);
+        }
+      }
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || "Failed to fetch PK data");
+    } finally {
+      setFetchingPk(false);
+    }
+  };
+
+  const handleApproveWindow = async () => {
+    if (!selectedMedId) return;
+    try {
+      setReviewBusy(true);
+      const row = await api.approveMedicationWindowReview(selectedMedId);
+      setWindowReview(row);
+      setShowRejectForm(false);
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || "Failed to approve window");
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
+  const handleRejectWindow = async () => {
+    if (!selectedMedId) return;
+    try {
+      setReviewBusy(true);
+      const body: {
+        notes?: string;
+        manual_lower_mg_l?: number;
+        manual_upper_mg_l?: number;
+      } = {};
+      if (rejectNotes.trim()) body.notes = rejectNotes.trim();
+      if (manualLow.trim() || manualHigh.trim()) {
+        body.manual_lower_mg_l = Number(manualLow);
+        body.manual_upper_mg_l = Number(manualHigh);
+      }
+      const row = await api.rejectMedicationWindowReview(selectedMedId, body);
+      setWindowReview(row);
+      setShowRejectForm(false);
+      setManualLow("");
+      setManualHigh("");
+      setRejectNotes("");
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || "Failed to reject window");
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
   const chartData =
     result?.times_hr.map((t, i) => ({
       time: t,
@@ -184,7 +445,7 @@ export default function Simulation() {
         <strong>{patientId || "unknown"}</strong>
         {selectedMed && (
           <>
-            {" "}– Medication: <strong>{selectedMed.name}</strong>
+            {" "} - Medication: <strong>{selectedMed.name}</strong>
           </>
         )}
       </p>
@@ -215,11 +476,59 @@ export default function Simulation() {
             >
               {medications.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name} ({m.id})
+                  {m.name}
                 </option>
               ))}
             </select>
           </label>
+          <label style={{ fontSize: "0.9rem", display: "flex", flexDirection: "column" }}>
+            <span style={{ marginBottom: "0.25rem" }}>Fetch PK For</span>
+            <input
+              type="text"
+              placeholder="Medication name (required)"
+              value={fetchMedName}
+              onChange={(e) => setFetchMedName(e.target.value)}
+              style={{
+                padding: "0.3rem 0.6rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #d1d5db",
+                minWidth: "16rem",
+              }}
+            />
+          </label>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              fontSize: "0.85rem",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={fetchUpsert}
+              onChange={(e) => setFetchUpsert(e.target.checked)}
+            />
+            Upsert into DB
+          </label>
+
+          <button
+            type="button"
+            onClick={handleFetchPk}
+            disabled={fetchingPk}
+            style={{
+              padding: "0.3rem 0.8rem",
+              borderRadius: "999px",
+              border: "1px solid #111827",
+              background: "#111827",
+              color: "#fff",
+              cursor: "pointer",
+              fontSize: "0.8rem",
+              marginTop: 0,
+            }}
+          >
+            {fetchingPk ? "Fetching PK..." : "Fetch PK"}
+          </button>
 
           <button
             type="button"
@@ -228,13 +537,159 @@ export default function Simulation() {
               padding: "0.3rem 0.8rem",
               borderRadius: "999px",
               border: "1px solid #111827",
-              background: "#fff",
+              background: "#111827",
+              color: "#fff",
               cursor: "pointer",
               fontSize: "0.8rem",
+              marginTop: 0,
             }}
           >
-            {showNewMed ? "Cancel" : "＋ Add medication"}
+            {showNewMed ? "Cancel" : "+ Add medication"}
           </button>
+          <button
+            type="button"
+            onClick={() => setShowEditMed((v) => !v)}
+            disabled={!selectedMedId}
+            style={{
+              padding: "0.3rem 0.8rem",
+              borderRadius: "999px",
+              border: "1px solid #111827",
+              background: "#111827",
+              color: "#fff",
+              cursor: "pointer",
+              fontSize: "0.8rem",
+              marginTop: 0,
+            }}
+          >
+            {showEditMed ? "Close edit" : "Edit selected"}
+          </button>
+        </div>
+
+        {pkFetchResult && (
+          <div
+            style={{
+              border: "1px solid #e5e7eb",
+              borderRadius: "0.75rem",
+              padding: "0.75rem",
+              fontSize: "0.85rem",
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: "0.4rem" }}>Fetched PK Values</div>
+            <div>Half-life: {pkFetchResult.half_life_hr ?? "n/a"} hr</div>
+            <div>Clearance: {pkFetchResult.clearance_L_per_hr ?? "n/a"} L/hr</div>
+            <div>Vd: {pkFetchResult.Vd_L ?? "n/a"} L</div>
+            <div>Bioavailability: {pkFetchResult.bioavailability ?? "n/a"}</div>
+            <div>
+              Scraped range: {pkFetchResult.therapeutic_window_lower_mg_l ?? "n/a"} - {pkFetchResult.therapeutic_window_upper_mg_l ?? "n/a"} mg/L
+            </div>
+            {pkFetchResult.window_review && (
+              <>
+                <div>
+                  Proposed window: {pkFetchResult.window_review.lower_mg_l ?? "n/a"} - {pkFetchResult.window_review.upper_mg_l ?? "n/a"} mg/L
+                </div>
+                <div>
+                  Review status: {pkFetchResult.window_review.status} | Source: {pkFetchResult.window_review.source ?? "n/a"} | Confidence: {pkFetchResult.window_review.confidence_pct ?? "n/a"}%
+                </div>
+              </>
+            )}
+            <div style={{ marginTop: "0.4rem" }}>
+              Source summary: {pkFetchResult.sources ? JSON.stringify(pkFetchResult.sources) : "n/a"}
+            </div>
+          </div>
+        )}
+
+        <div
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: "0.75rem",
+            padding: "0.75rem",
+            fontSize: "0.85rem",
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>Therapeutic Window Review</div>
+          <div style={{ marginBottom: "0.25rem" }}>
+            Queue pending manual entry: <strong>{queueCount}</strong>
+          </div>
+          {reviewLoading && <div>Loading review...</div>}
+          {!reviewLoading && windowReview && (
+            <>
+              <div>Status: <strong>{windowReview.status}</strong></div>
+              <div>
+                Proposed range: {windowReview.lower_mg_l ?? "n/a"} - {windowReview.upper_mg_l ?? "n/a"} mg/L
+              </div>
+              <div>Source: {windowReview.source ?? "n/a"} | Confidence: {windowReview.confidence_pct ?? "n/a"}%</div>
+              {windowReview.reviewer_notes && <div>Notes: {windowReview.reviewer_notes}</div>}
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  onClick={handleApproveWindow}
+                  disabled={reviewBusy}
+                  style={{
+                    padding: "0.3rem 0.8rem",
+                    borderRadius: "999px",
+                    border: "1px solid #111827",
+                    background: "#111827",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  {reviewBusy ? "Saving..." : "Approve"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRejectForm((v) => !v)}
+                  disabled={reviewBusy}
+                  style={{
+                    padding: "0.3rem 0.8rem",
+                    borderRadius: "999px",
+                    border: "1px solid #991b1b",
+                    background: "#991b1b",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  Reject
+                </button>
+              </div>
+              {showRejectForm && (
+                <div
+                  style={{
+                    marginTop: "0.5rem",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <FieldText label="Manual lower mg/L" value={manualLow} onChange={setManualLow} />
+                  <FieldText label="Manual upper mg/L" value={manualHigh} onChange={setManualHigh} />
+                  <FieldText label="Reject note (optional)" value={rejectNotes} onChange={setRejectNotes} />
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <button
+                      type="button"
+                      onClick={handleRejectWindow}
+                      disabled={reviewBusy}
+                      style={{
+                        padding: "0.3rem 0.8rem",
+                        borderRadius: "999px",
+                        border: "1px solid #991b1b",
+                        background: "#991b1b",
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontSize: "0.8rem",
+                      }}
+                    >
+                      {reviewBusy ? "Saving..." : "Submit Reject"}
+                    </button>
+                    <span style={{ marginLeft: "0.5rem", color: "#7f1d1d" }}>
+                      If you reject without manual values, this stays in manual_required queue.
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {showNewMed && (
@@ -305,6 +760,111 @@ export default function Simulation() {
           </div>
         )}
 
+        {showEditMed && selectedMed && (
+          <div
+            style={{
+              border: "1px dashed #d1d5db",
+              borderRadius: "0.75rem",
+              padding: "0.75rem",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "0.5rem",
+              fontSize: "0.85rem",
+            }}
+          >
+            <div style={{ gridColumn: "1 / -1", fontWeight: 600 }}>
+              Edit medication: {selectedMed.name}
+            </div>
+            <FieldText
+              label="Generic name"
+              value={editMedGenericName}
+              onChange={setEditMedGenericName}
+            />
+            <FieldText
+              label="Half-life (hr)"
+              value={editMedHalfLife}
+              onChange={setEditMedHalfLife}
+            />
+            <FieldText
+              label="Bioavailability (0-1)"
+              value={editMedBioavailability}
+              onChange={setEditMedBioavailability}
+            />
+            <FieldText
+              label="Clearance raw value"
+              value={editMedClrRawValue}
+              onChange={setEditMedClrRawValue}
+            />
+            <FieldText
+              label="Clearance raw unit"
+              value={editMedClrRawUnit}
+              onChange={setEditMedClrRawUnit}
+            />
+            <FieldText
+              label="Vd raw value"
+              value={editMedVdRawValue}
+              onChange={setEditMedVdRawValue}
+            />
+            <FieldText
+              label="Vd raw unit"
+              value={editMedVdRawUnit}
+              onChange={setEditMedVdRawUnit}
+            />
+            <FieldText
+              label="Therapeutic lower (mg/L)"
+              value={editMedWinLow}
+              onChange={setEditMedWinLow}
+            />
+            <FieldText
+              label="Therapeutic upper (mg/L)"
+              value={editMedWinHigh}
+              onChange={setEditMedWinHigh}
+            />
+            <FieldText
+              label="Source URL"
+              value={editMedSourceUrl}
+              onChange={setEditMedSourceUrl}
+            />
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: "0.5rem" }}>
+              <button
+                type="button"
+                onClick={handleUpdateMedication}
+                disabled={updatingMed || deletingMed}
+                style={{
+                  padding: "0.4rem 0.9rem",
+                  borderRadius: "999px",
+                  border: "1px solid #111827",
+                  background: "#111827",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: "0.85rem",
+                }}
+              >
+                {updatingMed ? "Saving..." : "Save changes"}
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteMedication}
+                disabled={updatingMed || deletingMed}
+                style={{
+                  padding: "0.4rem 0.9rem",
+                  borderRadius: "999px",
+                  border: "1px solid #991b1b",
+                  background: "#991b1b",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: "0.85rem",
+                }}
+              >
+                {deletingMed ? "Deleting..." : "Delete medication"}
+              </button>
+              {editMedErr && (
+                <span style={{ color: "#b91c1c", alignSelf: "center" }}>{editMedErr}</span>
+              )}
+            </div>
+          </div>
+        )}
+
         <div
           style={{
             display: "flex",
@@ -335,7 +895,7 @@ export default function Simulation() {
             onChange={(v) => setDtHr(Number(v))}
           />
           <FieldNumber
-            label="Absorption rate (hr⁻¹, optional)"
+            label="Absorption rate (hr^-1, optional)"
             value={absorption_rate_hr ?? ""}
             step={0.01}
             onChange={(v) =>
@@ -386,11 +946,61 @@ export default function Simulation() {
             >
               <div>Cmax: {result.cmax_mg_l.toFixed(2)} mg/L</div>
               <div>Cmin: {result.cmin_mg_l.toFixed(2)} mg/L</div>
-              <div>AUC: {result.auc_mg_h_l.toFixed(1)} mg·h/L</div>
+              <div>AUC: {result.auc_mg_h_l.toFixed(1)} mg*h/L</div>
               <div>Duration: {result.duration_hr} h</div>
               <div>Within target: {result.therapeutic_eval.pct_within}%</div>
               <div>Risk: {result.therapeutic_eval.ade_risk_level}</div>
             </div>
+            {result.therapeutic_window && (
+              <div style={{ marginTop: "0.5rem", fontSize: "0.88rem" }}>
+                Target window: {result.therapeutic_window.lower_mg_l ?? "n/a"} - {result.therapeutic_window.upper_mg_l ?? "n/a"} mg/L
+                {" "}({result.therapeutic_window.source ?? "unknown"})
+              </div>
+            )}
+            {result.params_used?.suggested_input_dose_mg_for_mid_window != null && (
+              <div style={{ marginTop: "0.25rem", fontSize: "0.88rem" }}>
+                Suggested dose for mid-window: {result.params_used.suggested_input_dose_mg_for_mid_window.toFixed(1)} mg every {result.interval_hr} hr
+              </div>
+            )}
+            {result.params_used?.recommended_regimens && result.params_used.recommended_regimens.length > 0 && (
+              <div style={{ marginTop: "0.5rem", fontSize: "0.88rem" }}>
+                <div style={{ fontWeight: 600, marginBottom: "0.2rem" }}>Try These Regimens</div>
+                {result.params_used.recommended_regimens.map((r, idx) => (
+                  <div key={idx}>
+                    {r.dose_mg} mg q{r.interval_hr}h x{r.num_doses} doses | within: {r.pct_within.toFixed(1)}% | risk: {r.risk}
+                    {r.meets_goal_96pct ? " | meets 96% goal" : ""}
+                  </div>
+                ))}
+              </div>
+            )}
+            {result.patient_context && (
+              <div style={{ marginTop: "0.75rem", fontSize: "0.88rem" }}>
+                <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>
+                  Patient Context Used
+                </div>
+                <div>
+                  Age: {result.patient_context.age ?? "n/a"} | Sex: {result.patient_context.sex ?? "n/a"} | Weight: {result.patient_context.weight_kg ?? "n/a"} kg
+                </div>
+                <div>
+                  SCr: {result.patient_context.serum_creatinine_mg_dl ?? "n/a"} mg/dL | CrCl: {result.patient_context.creatinine_clearance_ml_min ?? "n/a"} mL/min | CKD: {result.patient_context.ckd_stage ?? "n/a"}
+                </div>
+                <div>
+                  Height: {result.patient_context.height_cm ?? "n/a"} cm | Pregnant: {result.patient_context.is_pregnant == null ? "n/a" : result.patient_context.is_pregnant ? "yes" : "no"} | Trimester: {result.patient_context.pregnancy_trimester ?? "n/a"}
+                </div>
+                <div>
+                  Breastfeeding: {result.patient_context.is_breastfeeding == null ? "n/a" : result.patient_context.is_breastfeeding ? "yes" : "no"} | Liver: {result.patient_context.liver_disease_status ?? "n/a"} | Albumin: {result.patient_context.albumin_g_dl ?? "n/a"} g/dL
+                </div>
+                <div>
+                  BP: {result.patient_context.systolic_bp_mm_hg ?? "n/a"}/{result.patient_context.diastolic_bp_mm_hg ?? "n/a"} mmHg | HR: {result.patient_context.heart_rate_bpm ?? "n/a"} bpm
+                </div>
+                <div>
+                  Conditions: {(result.patient_context.conditions && result.patient_context.conditions.length > 0) ? result.patient_context.conditions.join(", ") : "n/a"}
+                </div>
+                <div>
+                  Current meds: {(result.patient_context.current_medications && result.patient_context.current_medications.length > 0) ? result.patient_context.current_medications.join(", ") : "n/a"}
+                </div>
+              </div>
+            )}
             {result.therapeutic_eval.alerts.length > 0 && (
               <ul
                 style={{
@@ -416,7 +1026,7 @@ export default function Simulation() {
             }}
           >
             <h3 style={{ fontWeight: 600, marginBottom: "0.5rem" }}>
-              Concentration–Time Curve
+              Concentration-Time Curve
             </h3>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
@@ -507,3 +1117,7 @@ function FieldText({ label, value, required, onChange }: FieldTextProps) {
     </label>
   );
 }
+
+
+
+

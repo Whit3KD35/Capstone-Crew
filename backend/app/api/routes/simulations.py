@@ -7,149 +7,47 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from ...core.db import get_session
-from ...models import Patient, Medication, Simulation
-from ...pharmacokinetics import simulate_and_store
+from ...core.security import decryptData
+from ...models import (
+    Condition,
+    Medication,
+    Patient,
+    PatientClinicalFactors,
+    PatientConditionLink,
+    PatientCurrentMedication,
+    PatientVitalSigns,
+    Simulation,
+)
+from ...pharmacokinetics import (
+    evaluate_therapeutic_window,
+    resolve_therapeutic_window_for_medication,
+    simulate_and_store,
+)
 
 router = APIRouter(
     prefix="/sims",
     tags=["sims"],
 )
 
-# Therapeutic window helper
-def evaluate_therapeutic_window(
-    times_hr: List[float],
-    conc_mg_per_L: List[float],
-    lower_mg_per_L: float,
-    upper_mg_per_L: float,
-) -> Dict[str, Any]:
-    """
-    Evaluate % time BELOW / WITHIN / ABOVE [lower, upper] mg/L.
 
-    - Ignores the very long terminal tail by only integrating over the
-      "active" period where concentration >= 10% of the lower bound.
-    - Uses a simple midpoint rule between adjacent samples.
-    """
-    if (
-        not times_hr
-        or not conc_mg_per_L
-        or len(times_hr) != len(conc_mg_per_L)
-        or lower_mg_per_L <= 0
-        or upper_mg_per_L <= lower_mg_per_L
-    ):
-        return {
-            "alerts": ["Insufficient data to evaluate therapeutic window."],
-            "off_score": 0.0,
-            "pct_above": 0.0,
-            "pct_below": 0.0,
-            "pct_within": 0.0,
-            "ade_risk_level": "UNKNOWN",
-            "time_within_hr": 0.0,
-            "time_above_hr": 0.0,
-            "time_below_hr": 0.0,
-        }
-
-    # Determine active evaluation window by trimming tail
-    threshold = 0.1 * lower_mg_per_L  # 10% of lower bound
-    active_indices = [i for i, c in enumerate(conc_mg_per_L) if c >= threshold]
-
-    if not active_indices:
-        total_time = times_hr[-1] - times_hr[0]
-        total_time = max(total_time, 1e-9)
-        return {
-            "alerts": [
-                f"Concentration never reached 10% of lower bound "
-                f"({threshold:.2f} mg/L). Essentially always below range."
-            ],
-            "off_score": 100.0,
-            "pct_above": 0.0,
-            "pct_below": 100.0,
-            "pct_within": 0.0,
-            "ade_risk_level": "HIGH",
-            "time_within_hr": 0.0,
-            "time_above_hr": 0.0,
-            "time_below_hr": total_time,
-        }
-
-    start_idx = active_indices[0]
-    end_idx = active_indices[-1]
-
-    eval_start = times_hr[start_idx]
-    eval_end = times_hr[end_idx]
-    total_time = eval_end - eval_start
-    total_time = max(total_time, 1e-9)
-
-    time_within = 0.0
-    time_above = 0.0
-    time_below = 0.0
-
-    # Integrate only over [start_idx, end_idx]
-    for i in range(start_idx, end_idx):
-        t0 = times_hr[i]
-        t1 = times_hr[i + 1]
-        dt = t1 - t0
-        if dt <= 0:
-            continue
-
-        c_mid = 0.5 * (conc_mg_per_L[i] + conc_mg_per_L[i + 1])
-
-        if c_mid < lower_mg_per_L:
-            time_below += dt
-        elif c_mid > upper_mg_per_L:
-            time_above += dt
-        else:
-            time_within += dt
-
-    pct_within = 100.0 * time_within / total_time
-    pct_above = 100.0 * time_above / total_time
-    pct_below = 100.0 * time_below / total_time
-
-    # Risk heuristic
-    if pct_above > 30.0 or pct_below > 50.0:
-        risk = "HIGH"
-    elif pct_above > 10.0 or pct_below > 30.0:
-        risk = "MODERATE"
-    elif pct_above > 0.0 or pct_below > 0.0:
-        risk = "LOW"
-    else:
-        risk = "NONE"
-
-    alerts: List[str] = []
-    alerts.append(
-        f"Evaluated between t = {eval_start:.1f}–{eval_end:.1f} h "
-        f"for window [{lower_mg_per_L:.2f}, {upper_mg_per_L:.2f}] mg/L."
-    )
-    if time_above > 0:
-        alerts.append(
-            f"Above therapeutic range for {time_above:.1f} h "
-            f"({pct_above:.1f}% of evaluated time)."
-        )
-    if time_below > 0:
-        alerts.append(
-            f"Below therapeutic range for {time_below:.1f} h "
-            f"({pct_below:.1f}% of evaluated time)."
-        )
-    if time_within > 0:
-        alerts.append(
-            f"Within therapeutic range for {time_within:.1f} h "
-            f"({pct_within:.1f}% of evaluated time)."
-        )
-
-    off_score = pct_above + pct_below
-
-    return {
-        "alerts": alerts,
-        "off_score": off_score,
-        "pct_above": pct_above,
-        "pct_below": pct_below,
-        "pct_within": pct_within,
-        "ade_risk_level": risk,
-        "time_within_hr": time_within,
-        "time_above_hr": time_above,
-        "time_below_hr": time_below,
-    }
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
-# Request / response models
+def _decrypt_or_raw(value: Any) -> Any:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return value
+    try:
+        return decryptData(value)
+    except Exception:
+        return value
+
+
 class RunSimulationRequest(BaseModel):
     patient_id: str
     medication_id: str
@@ -180,17 +78,19 @@ class RunSimulationResponse(BaseModel):
     flag_too_high: bool
     flag_too_low: bool
 
+    patient_context: Dict[str, Any]
+    therapeutic_window: Dict[str, Any]
     therapeutic_eval: Dict[str, Any]
+    params_used: Dict[str, Any]
     times_hr: List[float]
     conc_mg_per_L: List[float]
 
-# Route
+
 @router.post("/run", response_model=RunSimulationResponse)
 def run_simulation(
     payload: RunSimulationRequest,
     session: Session = Depends(get_session),
 ):
-    # Validate patient / medication ID
     pat = session.exec(
         select(Patient).where(Patient.id == payload.patient_id)
     ).first()
@@ -209,7 +109,6 @@ def run_simulation(
             detail="Medication not found",
         )
 
-    # Run & store base PK simulation
     sim: Simulation = simulate_and_store(
         session=session,
         patient_id=str(pat.id),
@@ -224,32 +123,77 @@ def run_simulation(
     sim_results: Dict[str, Any] = sim.sim_results or {}
     times_hr: List[float] = sim_results.get("times_hr", []) or []
     conc_mg_per_L: List[float] = sim_results.get("conc_mg_per_L", []) or []
+    params_used: Dict[str, Any] = sim_results.get("params_used", {}) or {}
+    factors = session.exec(
+        select(PatientClinicalFactors).where(PatientClinicalFactors.patient_id == pat.id)
+    ).first()
+    vitals = session.exec(
+        select(PatientVitalSigns).where(PatientVitalSigns.patient_id == pat.id)
+    ).first()
+    condition_links = session.exec(
+        select(PatientConditionLink).where(PatientConditionLink.patient_id == pat.id)
+    ).all()
+    condition_names: list[str] = []
+    for link in condition_links:
+        condition = session.get(Condition, link.condition_id)
+        if condition and condition.name:
+            condition_names.append(condition.name)
+    current_meds = session.exec(
+        select(PatientCurrentMedication).where(PatientCurrentMedication.patient_id == pat.id)
+    ).all()
+    current_medication_names = [m.name for m in current_meds if m.name]
 
-    lower = getattr(med, "therapeutic_window_lower_mg_l", None)
-    upper = getattr(med, "therapeutic_window_upper_mg_l", None)
-
-    # global fallback if not set on the drug
-    if lower is None or upper is None or lower <= 0 or upper <= lower:
-        lower = 1.0   # mg/L
-        upper = 10.0  # mg/L
+    lower, upper, targets, window_source = resolve_therapeutic_window_for_medication(session, med)
 
     therapeutic_eval = evaluate_therapeutic_window(
-        times_hr=times_hr,
-        conc_mg_per_L=conc_mg_per_L,
-        lower_mg_per_L=lower,
-        upper_mg_per_L=upper,
+        times=times_hr,
+        conc=conc_mg_per_L,
+        therapeutic_min_mg_per_L=lower,
+        therapeutic_max_mg_per_L=upper,
+        t_start_hr=0.0,
+        t_end_hr=payload.interval_hr * payload.num_doses,
+        targets=targets,
     )
 
-    # Update flags & persist updated results
-    sim.flag_too_high = therapeutic_eval["pct_above"] > 0.0
-    sim.flag_too_low = therapeutic_eval["pct_below"] > 0.0
+    patient_context: Dict[str, Any] = {
+        "patient_id": str(pat.id),
+        "age": pat.age,
+        "sex": pat.sex,
+        "weight_kg": _safe_float(pat.weight_kg),
+        "serum_creatinine_mg_dl": _safe_float(pat.serum_creatinine_mg_dl),
+        "creatinine_clearance_ml_min": _safe_float(pat.creatinine_clearance_ml_min),
+        "ckd_stage": _decrypt_or_raw(pat.ckd_stage),
+        "height_cm": _safe_float(factors.height_cm) if factors else None,
+        "is_pregnant": factors.is_pregnant if factors else None,
+        "pregnancy_trimester": factors.pregnancy_trimester if factors else None,
+        "is_breastfeeding": factors.is_breastfeeding if factors else None,
+        "liver_disease_status": factors.liver_disease_status if factors else None,
+        "albumin_g_dl": _safe_float(factors.albumin_g_dl) if factors else None,
+        "systolic_bp_mm_hg": vitals.systolic_bp_mm_hg if vitals else None,
+        "diastolic_bp_mm_hg": vitals.diastolic_bp_mm_hg if vitals else None,
+        "heart_rate_bpm": vitals.heart_rate_bpm if vitals else None,
+        "conditions": sorted(list(set(condition_names))),
+        "current_medications": sorted(list(set(current_medication_names))),
+    }
+
+    sim.flag_too_high = therapeutic_eval["pct_above"] > therapeutic_eval["target_above_pct"]
+    sim.flag_too_low = therapeutic_eval["pct_below"] > therapeutic_eval["target_below_pct"]
 
     sim_results["therapeutic_eval"] = therapeutic_eval
+    sim_results["patient_context"] = patient_context
+    sim_results["therapeutic_window"] = {
+        "lower_mg_l": lower,
+        "upper_mg_l": upper,
+        "source": window_source,
+    }
     sim.sim_results = sim_results
 
     session.add(sim)
     session.commit()
     session.refresh(sim)
+
+    chart_times = times_hr[:2000]
+    chart_conc = conc_mg_per_L[:2000]
 
     return RunSimulationResponse(
         id=str(sim.id),
@@ -263,7 +207,14 @@ def run_simulation(
         auc_mg_h_l=float(sim.auc_mg_h_l) if sim.auc_mg_h_l is not None else None,
         flag_too_high=sim.flag_too_high,
         flag_too_low=sim.flag_too_low,
+        patient_context=patient_context,
+        therapeutic_window={
+            "lower_mg_l": lower,
+            "upper_mg_l": upper,
+            "source": window_source,
+        },
         therapeutic_eval=therapeutic_eval,
-        times_hr=times_hr,
-        conc_mg_per_L=conc_mg_per_L,
+        params_used=params_used,
+        times_hr=chart_times,
+        conc_mg_per_L=chart_conc,
     )

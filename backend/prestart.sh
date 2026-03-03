@@ -13,4 +13,3 @@ fi
 # Let the DB start
 $PYTHON_CMD app/prestart.py
 $PYTHON_CMD app/initialize.py
-$PYTHON_CMD app/scripts.py

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, List, Annotated
+from typing import Optional, List, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -8,10 +8,15 @@ from sqlmodel import Session, select
 from ...core.db import get_session
 from ...models import Medication
 from ...pharmacokinetics import (
+    TherapeuticTargets,
+    compute_prediction_accuracy_metrics,
     fetch_drug_pharmacokinetics,
+    list_supported_tdm_drugs,
     predict_concentration_timecourse,
     evaluate_therapeutic_window,
     compute_creatinine_clearance,
+    build_window_review_preview,
+    upsert_window_review_proposal,
     _float_to_dec,
 )
 
@@ -49,6 +54,9 @@ class TherapeuticWindowRequest(BaseModel):
     conc_mg_per_L: Annotated[List[float], Field(min_length=2)]
     therapeutic_min_mg_per_L: float = Field(..., ge=0)
     therapeutic_max_mg_per_L: float = Field(..., gt=0)
+    target_max_pct_below: Optional[float] = Field(None, ge=0)
+    target_max_pct_above: Optional[float] = Field(None, ge=0)
+    target_min_pct_within: Optional[float] = Field(None, ge=0, le=100)
 
 class TherapeuticWindowResponse(BaseModel):
     pct_below: float
@@ -76,6 +84,30 @@ class CreatinineClearanceRequest(BaseModel):
     serum_creatinine_mg_dl: float = Field(..., gt=0)
     sex: str = Field(..., description="M/F")
 
+
+class AccuracyMetricsRequest(BaseModel):
+    observed_conc_mg_per_L: Annotated[List[float], Field(min_length=1)]
+    predicted_conc_mg_per_L: Annotated[List[float], Field(min_length=1)]
+
+
+class AccuracyMetricsResponse(BaseModel):
+    n_total: float
+    n_nonzero_observed: float
+    mae: float
+    rmse: float
+    mpe_pct: float
+    mape_pct: float
+    p20_pct: float
+    p30_pct: float
+
+
+@router.get("/supported-drugs", summary="Supported TDM Drugs")
+def supported_drugs(db: Session = Depends(get_session)):
+    return {
+        "supported_tdm_drugs": list_supported_tdm_drugs(db),
+        "note": "Windows are concentration targets in mg/L for drugs with established TDM use.",
+    }
+
 @router.get("/fetch", summary="Fetch And Upsert")
 def fetch_and_upsert(
     name: str = Query(..., description="Medication name, e.g., 'Warfarin'"),
@@ -83,9 +115,14 @@ def fetch_and_upsert(
         False,
         description="If true, persist PK into Medication table (best-effort).",
     ),
+    include_raw: bool = Query(
+        False,
+        description="If true, include full raw source text blocks (can be very large).",
+    ),
     db: Session = Depends(get_session),
 ):
     pk = fetch_drug_pharmacokinetics(name)
+    med: Medication | None = None
 
     if upsert:
         try:
@@ -108,15 +145,60 @@ def fetch_and_upsert(
             if pk.get("Vd_raw_value") is not None:
                 med.volume_of_distribution_raw_value = _float_to_dec(pk["Vd_raw_value"])
                 med.volume_of_distribution_raw_unit = pk.get("Vd_raw_unit")
+            if (
+                med.therapeutic_window_lower_mg_l is None
+                and pk.get("therapeutic_window_lower_mg_l") is not None
+            ):
+                med.therapeutic_window_lower_mg_l = _float_to_dec(
+                    float(pk["therapeutic_window_lower_mg_l"])
+                )
+            if (
+                med.therapeutic_window_upper_mg_l is None
+                and pk.get("therapeutic_window_upper_mg_l") is not None
+            ):
+                med.therapeutic_window_upper_mg_l = _float_to_dec(
+                    float(pk["therapeutic_window_upper_mg_l"])
+                )
 
             db.add(med)
             db.commit()
             db.refresh(med)
+            upsert_window_review_proposal(db, med, fetched_pk=pk)
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Upsert failed: {e}")
+    else:
+        med = db.exec(select(Medication).where(Medication.name == name)).first()
 
-    return pk
+    pk["window_review"] = build_window_review_preview(
+        session=db,
+        med_name=name,
+        med=med,
+        fetched_pk=pk,
+    )
+
+    if include_raw:
+        return pk
+    return _summarize_source_payload(pk)
+
+
+def _summarize_source_payload(pk: dict[str, Any]) -> dict[str, Any]:
+    summary = dict(pk)
+    sources = pk.get("sources", {})
+    summarized_sources: dict[str, Any] = {}
+    for source_name, source_val in sources.items():
+        if isinstance(source_val, str):
+            summarized_sources[source_name] = {
+                "has_raw_text": len(source_val.strip()) > 0,
+                "raw_char_count": len(source_val),
+            }
+        else:
+            summarized_sources[source_name] = {
+                "has_raw_text": False,
+                "raw_char_count": 0,
+            }
+    summary["sources"] = summarized_sources
+    return summary
 
 
 @router.post("/simulate", response_model=SimulateResponse, summary="Simulate")
@@ -179,11 +261,18 @@ def therapeutic_window(req: TherapeuticWindowRequest):
             detail="times_hr and conc_mg_per_L lengths must match",
         )
 
+    targets = TherapeuticTargets(
+        max_pct_below=req.target_max_pct_below if req.target_max_pct_below is not None else 20.0,
+        max_pct_above=req.target_max_pct_above if req.target_max_pct_above is not None else 5.0,
+        min_pct_within=req.target_min_pct_within if req.target_min_pct_within is not None else 50.0,
+    )
+
     res = evaluate_therapeutic_window(
         times=list(req.times_hr),
         conc=list(req.conc_mg_per_L),
         therapeutic_min_mg_per_L=req.therapeutic_min_mg_per_L,
         therapeutic_max_mg_per_L=req.therapeutic_max_mg_per_L,
+        targets=targets,
     )
     return TherapeuticWindowResponse(**res)
 
@@ -201,3 +290,20 @@ def creatinine_clearance(req: CreatinineClearanceRequest):
         raise HTTPException(status_code=400, detail=str(ve))
 
     return {"creatinine_clearance_ml_min": crcl}
+
+
+@router.post("/accuracy-metrics", response_model=AccuracyMetricsResponse, summary="Prediction Accuracy")
+def accuracy_metrics(req: AccuracyMetricsRequest):
+    if len(req.observed_conc_mg_per_L) != len(req.predicted_conc_mg_per_L):
+        raise HTTPException(
+            status_code=400,
+            detail="observed_conc_mg_per_L and predicted_conc_mg_per_L lengths must match",
+        )
+    try:
+        res = compute_prediction_accuracy_metrics(
+            observed_conc=list(req.observed_conc_mg_per_L),
+            predicted_conc=list(req.predicted_conc_mg_per_L),
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    return AccuracyMetricsResponse(**res)

@@ -53,6 +53,58 @@ class Patient(SQLModel, table=True):
         link_model=PatientMedicationLink
     )
     simulations: list["Simulation"] = Relationship(back_populates="patient")
+    clinical_factors: Optional["PatientClinicalFactors"] = Relationship(back_populates="patient")
+    vital_signs: Optional["PatientVitalSigns"] = Relationship(back_populates="patient")
+    condition_links: list["PatientConditionLink"] = Relationship(back_populates="patient")
+    current_medications: list["PatientCurrentMedication"] = Relationship(back_populates="patient")
+
+
+class PatientClinicalFactors(SQLModel, table=True):
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
+    patient_id: uuid.UUID = Field(foreign_key="patient.id", unique=True, index=True)
+
+    height_cm: Decimal | None = None
+    is_pregnant: bool | None = None
+    pregnancy_trimester: str | None = None
+    is_breastfeeding: bool | None = None
+    liver_disease_status: str | None = None
+    albumin_g_dl: Decimal | None = None
+
+    patient: Patient = Relationship(back_populates="clinical_factors")
+
+
+class PatientVitalSigns(SQLModel, table=True):
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
+    patient_id: uuid.UUID = Field(foreign_key="patient.id", unique=True, index=True)
+    systolic_bp_mm_hg: int | None = None
+    diastolic_bp_mm_hg: int | None = None
+    heart_rate_bpm: int | None = None
+
+    patient: Patient = Relationship(back_populates="vital_signs")
+
+
+class Condition(SQLModel, table=True):
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(index=True, unique=True)
+
+    patient_links: list["PatientConditionLink"] = Relationship(back_populates="condition")
+
+
+class PatientConditionLink(SQLModel, table=True):
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
+    patient_id: uuid.UUID = Field(foreign_key="patient.id", index=True)
+    condition_id: uuid.UUID = Field(foreign_key="condition.id", index=True)
+
+    patient: Patient = Relationship(back_populates="condition_links")
+    condition: Condition = Relationship(back_populates="patient_links")
+
+
+class PatientCurrentMedication(SQLModel, table=True):
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
+    patient_id: uuid.UUID = Field(foreign_key="patient.id", index=True)
+    name: str
+
+    patient: Patient = Relationship(back_populates="current_medications")
 
 
 class Medication(SQLModel, table=True):
@@ -76,6 +128,18 @@ class Medication(SQLModel, table=True):
         back_populates="medications",
         link_model=PatientMedicationLink
     )
+
+
+class MedicationTherapeuticWindowReview(SQLModel, table=True):
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
+    medication_id: uuid.UUID = Field(foreign_key="medication.id", unique=True, index=True)
+    status: str = Field(default="manual_required", index=True)
+    lower_mg_l: Decimal | None = None
+    upper_mg_l: Decimal | None = None
+    source: str | None = None
+    confidence_pct: Decimal | None = None
+    reviewer_notes: str | None = None
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class Simulation(SQLModel, table=True):

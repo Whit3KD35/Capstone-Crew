@@ -56,6 +56,24 @@ input:focus {
   box-shadow: 0 0 0 2px #c6caff;
 }
 
+select {
+  display: block;
+  width: 100%;
+  margin: 0.4rem 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #ccd3ff;
+  border-radius: 8px;
+  background: #f8f9ff;
+  transition: 0.2s;
+}
+
+select:focus {
+  outline: none;
+  border-color: #7e8cff;
+  background: #fff;
+  box-shadow: 0 0 0 2px #c6caff;
+}
+
 /* Buttons */
 button {
   margin-top: 1rem;
