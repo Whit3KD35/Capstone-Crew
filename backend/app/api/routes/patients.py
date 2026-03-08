@@ -4,6 +4,8 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from ...core.db import get_session
+from ...core.patient_auth import get_current_patient
+from ...models import Patient
 from ...models import (
     Condition,
     Patient,
@@ -13,6 +15,7 @@ from ...models import (
     PatientVitalSigns,
 )
 from app.core.security import encryptData, decryptData
+
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -330,4 +333,34 @@ def update_patient_by_email(email: str, body: PatientUpdate, session: Session = 
     _sync_current_medications(session, patient.id, body.current_medications)
     session.commit()
     session.refresh(patient)
+    return patient
+
+@router.get("/me")
+def get_my_profile(
+    session: Session = Depends(get_session),
+    user: dict = Depends(get_current_patient),
+):
+    patient = session.get(Patient, user["patient_id"])
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient
+
+
+@router.post("/me")
+def update_my_profile(
+    body: PatientUpdate,
+    session: Session = Depends(get_session),
+    user: dict = Depends(get_current_patient),
+):
+    patient = session.get(Patient, user["patient_id"])
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    for k, v in body.model_dump(exclude_none=True).items():
+        setattr(patient, k, v)
+
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    return patient
     return decrypt_patient(session, patient)

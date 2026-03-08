@@ -38,6 +38,7 @@ class Patient(SQLModel, table=True):
     name: str
     number: str | None = None
     email: EmailStr = Field(unique=True, index=True, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
     age: int | None = None
     sex: str | None = None
 
