@@ -423,9 +423,9 @@ def get_shared_simulation_for_patient(
 
 @router.post("/accept")
 def accept_simulation(
-    patient_id: uuid.UUID,
-    medication_id: uuid.UUID,
-    simulation_id: uuid.UUID,
+    patient_id: UUID,
+    medication_id: UUID,
+    simulation_id: UUID,
     session: Session = Depends(get_session)
 ):
     existing = session.exec(
@@ -457,8 +457,8 @@ def accept_simulation(
 
 @router.get("/accepted/{patient_id}/{medication_id}")
 def get_accepted_simulation(
-    patient_id: uuid.UUID,
-    medication_id: uuid.UUID,
+    patient_id: UUID,
+    medication_id: UUID,
     session: Session = Depends(get_session)
 ):
     accepted = session.exec(

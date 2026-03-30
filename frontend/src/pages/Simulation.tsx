@@ -122,6 +122,7 @@ export default function Simulation() {
   const [error, setError] = useState<string | null>(null);
   //const [result, setResult] = useState<SimulationResult | null>(null);
   const [results, setResults] = useState<SimulationResult[]>([]);
+  const result = results.length > 0 ? results[results.length - 1] : null;
   const [pkFetchResult, setPkFetchResult] = useState<PkFetchResponse | null>(null);
   const [fetchMedName, setFetchMedName] = useState("");
   const [fetchUpsert, setFetchUpsert] = useState(true);
