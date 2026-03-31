@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Line,
@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { api, type SharedSimulationDetail, type SharedSimulationSummary } from "../api";
+import { downloadSimulationPDF } from "./SimulationPDFExport";
 
 export default function PatientSimulations() {
   const nav = useNavigate();
@@ -18,6 +19,8 @@ export default function PatientSimulations() {
   const [detail, setDetail] = useState<SharedSimulationDetail | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const chartRef = useRef<HTMLDivElement>(null);
   const token = localStorage.getItem("patient_token") || "";
 
   useEffect(() => {
@@ -30,9 +33,7 @@ export default function PatientSimulations() {
       .listMySharedSimulations(token)
       .then((data) => {
         setRows(data);
-        if (data.length > 0) {
-          setSelectedId(data[0].id);
-        }
+        if (data.length > 0) setSelectedId(data[0].id);
       })
       .catch((e: any) => setErr(String(e)))
       .finally(() => setLoading(false));
@@ -60,10 +61,21 @@ export default function PatientSimulations() {
 
   const evalData = (detail?.therapeutic_eval || {}) as Record<string, unknown>;
   const pctWithin = typeof evalData.pct_within === "number" ? evalData.pct_within : null;
-  const pctAbove = typeof evalData.pct_above === "number" ? evalData.pct_above : null;
-  const pctBelow = typeof evalData.pct_below === "number" ? evalData.pct_below : null;
+  const pctAbove  = typeof evalData.pct_above  === "number" ? evalData.pct_above  : null;
+  const pctBelow  = typeof evalData.pct_below  === "number" ? evalData.pct_below  : null;
   const riskLevel = typeof evalData.ade_risk_level === "string" ? evalData.ade_risk_level : null;
-  const alerts = Array.isArray(evalData.alerts) ? (evalData.alerts as string[]) : [];
+  const alerts    = Array.isArray(evalData.alerts) ? (evalData.alerts as string[]) : [];
+
+  // ── PDF handler ────────────────────────────────────────────────────────────
+  const handleDownloadPDF = async () => {
+    if (!detail) return;
+    setPdfLoading(true);
+    try {
+      await downloadSimulationPDF(detail, chartRef);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   function onSignOut() {
     localStorage.removeItem("patient_token");
@@ -162,7 +174,11 @@ export default function PatientSimulations() {
             </div>
           </div>
 
-          <div style={{ border: "1px solid #ddd", borderRadius: "0.75rem", padding: "1rem", height: 320 }}>
+          {/* ── Chart (ref attached here for PDF screenshot) ── */}
+          <div
+            ref={chartRef}
+            style={{ border: "1px solid #ddd", borderRadius: "0.75rem", padding: "1rem", height: 320 }}
+          >
             <h3 style={{ marginTop: 0 }}>Concentration-Time Curve</h3>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
@@ -174,6 +190,15 @@ export default function PatientSimulations() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {/* ── Download button ── */}
+          <button
+            onClick={handleDownloadPDF}
+            disabled={pdfLoading}
+            style={{ marginTop: "1rem" }}
+          >
+            {pdfLoading ? "Generating PDF..." : "⬇ Download PDF Report"}
+          </button>
         </>
       )}
     </div>
