@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { api } from "../api";
+import Navbar from "../pages/Navbar";
 
 export default function BasicInfo() {
   const nav = useNavigate();
@@ -54,31 +55,34 @@ export default function BasicInfo() {
   }
 
   return (
-    <div className="container">
-      <div className="card">
-        <h1>Digital Twin</h1>
-        <h2>Basic Patient Information</h2>
+    <>
+      <Navbar />
+      <div className="container">
+        <div className="card">
+          <h1>Digital Twin</h1>
+          <h2>Basic Patient Information</h2>
 
-        <input
-          placeholder="Full Name"
-          value={full_name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          placeholder="Phone Number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
-        <input
-          placeholder="Email (optional)"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onBlur={tryPrefill}
-        />
+          <input
+            placeholder="Full Name"
+            value={full_name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            placeholder="Phone Number"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+          <input
+            placeholder="Email (optional)"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onBlur={tryPrefill}
+          />
 
-        <button onClick={onNext}>Next</button>
-        {err && <p style={{ color: "red" }}>{err}</p>}
+          <button onClick={onNext}>Next</button>
+          {err && <p style={{ color: "red" }}>{err}</p>}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

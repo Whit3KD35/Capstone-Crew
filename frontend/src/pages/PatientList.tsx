@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
+import Navbar from "../pages/Navbar";
 
 type Patient = {
   id: string;
@@ -122,78 +123,81 @@ export default function EditPatient() {
     return <p style={{ margin: "2rem" }}>Loading patient...</p>;
 
   return (
-    <div className="container">
-      <div className="card">
-        <h1>Edit Patient</h1>
+    <>
+      <Navbar />
+      <div className="container">
+        <div className="card">
+          <h1>Edit Patient</h1>
 
-        {patient?.email && (
-          <p style={{ marginBottom: "0.5rem" }}>
-            Email: <strong>{patient.email}</strong>
-          </p>
-        )}
+          {patient?.email && (
+            <p style={{ marginBottom: "0.5rem" }}>
+              Email: <strong>{patient.email}</strong>
+            </p>
+          )}
 
-        {patient && (
-          <div style={{ marginBottom: "1rem" }}>
-            <p>Last Login: <strong>{lastLogin}</strong></p>
-            <p>Last Simulation: <strong>{lastSimulation}</strong></p>
-          </div>
-        )}
+          {patient && (
+            <div style={{ marginBottom: "1rem" }}>
+              <p>Last Login: <strong>{lastLogin}</strong></p>
+              <p>Last Simulation: <strong>{lastSimulation}</strong></p>
+            </div>
+          )}
 
-        <input
-          placeholder="Full Name"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-        <input
-          placeholder="Phone Number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
+          <input
+            placeholder="Full Name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+          <input
+            placeholder="Phone Number"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
 
-        <input
-          placeholder="Age"
-          value={age}
-          onChange={(e) => setAge(e.target.value)}
-        />
-        <input
-          placeholder="Sex"
-          value={sex}
-          onChange={(e) => setSex(e.target.value)}
-        />
-        <input
-          placeholder="Weight (kg)"
-          value={weightKg}
-          onChange={(e) => setWeightKg(e.target.value)}
-        />
+          <input
+            placeholder="Age"
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+          />
+          <input
+            placeholder="Sex"
+            value={sex}
+            onChange={(e) => setSex(e.target.value)}
+          />
+          <input
+            placeholder="Weight (kg)"
+            value={weightKg}
+            onChange={(e) => setWeightKg(e.target.value)}
+          />
 
-        <input
-          placeholder="Serum creatinine (mg/dL)"
-          value={scr}
-          onChange={(e) => setScr(e.target.value)}
-        />
-        <input
-          placeholder="Creatinine clearance (mL/min)"
-          value={crcl}
-          onChange={(e) => setCrcl(e.target.value)}
-        />
-        <input
-          placeholder="CKD stage"
-          value={ckdStage}
-          onChange={(e) => setCkdStage(e.target.value)}
-        />
+          <input
+            placeholder="Serum creatinine (mg/dL)"
+            value={scr}
+            onChange={(e) => setScr(e.target.value)}
+          />
+          <input
+            placeholder="Creatinine clearance (mL/min)"
+            value={crcl}
+            onChange={(e) => setCrcl(e.target.value)}
+          />
+          <input
+            placeholder="CKD stage"
+            value={ckdStage}
+            onChange={(e) => setCkdStage(e.target.value)}
+          />
 
-        <button onClick={onSave}>Save Changes</button>
+          <button onClick={onSave}>Save Changes</button>
 
-        {msg && <p>{msg}</p>}
-        {err && <p style={{ color: "red" }}>{err}</p>}
+          {msg && <p>{msg}</p>}
+         {err && <p style={{ color: "red" }}>{err}</p>}
 
-        <button
-          style={{ marginTop: "1rem" }}
-          onClick={() => nav("/patients")}
-        >
-          Back to Patients
-        </button>
+          <button
+            style={{ marginTop: "1rem" }}
+            onClick={() => nav("/patients")}
+          >
+            Back to Patients
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
