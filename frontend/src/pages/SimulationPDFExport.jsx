@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+
 import html2canvas from "html2canvas";
 
 /**
@@ -6,7 +7,7 @@ import html2canvas from "html2canvas";
  *
  * @param {Object} sim         - The simulation object from your API response
  * @param {React.RefObject} chartRef - A ref attached to the chart DOM element
- */
+ */ 
 export async function downloadSimulationPDF(sim, chartRef) {
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
@@ -185,4 +186,5 @@ export async function downloadSimulationPDF(sim, chartRef) {
   }
 
   pdf.save(`simulation_${sim.id ?? "report"}.pdf`);
-}
+} 
+// Finalized the design/look of the pdf export
