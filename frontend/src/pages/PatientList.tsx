@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
+import Navbar from "../pages/Navbar";
 
 type Patient = {
   id: string;
@@ -19,6 +20,9 @@ type Patient = {
   serum_creatinine_mg_dl?: number | string | null;
   creatinine_clearance_ml_min?: number | string | null;
   ckd_stage?: string | null;
+
+  last_login?: string | null;
+  last_simulation_at?: string | null;
 };
 
 export default function EditPatient() {
@@ -39,6 +43,9 @@ export default function EditPatient() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
+  const [lastLogin, setLastLogin] = useState("");
+  const [lastSimulation, setLastSimulation] = useState("");
+
   useEffect(() => {
     if (!id) {
       setErr("No patient ID provided.");
@@ -49,6 +56,13 @@ export default function EditPatient() {
       .getPatientById(id)
       .then((p: Patient) => {
         setPatient(p);
+
+        setLastLogin(
+          p.last_login ? new Date(p.last_login).toLocaleString() : "N/A"
+        );
+        setLastSimulation(
+          p.last_simulation_at ? new Date(p.last_simulation_at).toLocaleString() : "N/A"
+        );
 
         const name =
           (p.full_name ?? undefined) ||
@@ -109,71 +123,81 @@ export default function EditPatient() {
     return <p style={{ margin: "2rem" }}>Loading patient...</p>;
 
   return (
-    <div className="container">
-      <div className="card">
-        <h1>Edit Patient</h1>
+    <>
+      <Navbar />
+      <div className="container">
+        <div className="card">
+          <h1>Edit Patient</h1>
 
-        {patient?.email && (
-          <p style={{ marginBottom: "0.5rem" }}>
-            Email: <strong>{patient.email}</strong>
-          </p>
-        )}
+          {patient?.email && (
+            <p style={{ marginBottom: "0.5rem" }}>
+              Email: <strong>{patient.email}</strong>
+            </p>
+          )}
 
-        <input
-          placeholder="Full Name"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-        <input
-          placeholder="Phone Number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
+          {patient && (
+            <div style={{ marginBottom: "1rem" }}>
+              <p>Last Login: <strong>{lastLogin}</strong></p>
+              <p>Last Simulation: <strong>{lastSimulation}</strong></p>
+            </div>
+          )}
 
-        <input
-          placeholder="Age"
-          value={age}
-          onChange={(e) => setAge(e.target.value)}
-        />
-        <input
-          placeholder="Sex"
-          value={sex}
-          onChange={(e) => setSex(e.target.value)}
-        />
-        <input
-          placeholder="Weight (kg)"
-          value={weightKg}
-          onChange={(e) => setWeightKg(e.target.value)}
-        />
+          <input
+            placeholder="Full Name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+          <input
+            placeholder="Phone Number"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
 
-        <input
-          placeholder="Serum creatinine (mg/dL)"
-          value={scr}
-          onChange={(e) => setScr(e.target.value)}
-        />
-        <input
-          placeholder="Creatinine clearance (mL/min)"
-          value={crcl}
-          onChange={(e) => setCrcl(e.target.value)}
-        />
-        <input
-          placeholder="CKD stage"
-          value={ckdStage}
-          onChange={(e) => setCkdStage(e.target.value)}
-        />
+          <input
+            placeholder="Age"
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+          />
+          <input
+            placeholder="Sex"
+            value={sex}
+            onChange={(e) => setSex(e.target.value)}
+          />
+          <input
+            placeholder="Weight (kg)"
+            value={weightKg}
+            onChange={(e) => setWeightKg(e.target.value)}
+          />
 
-        <button onClick={onSave}>Save Changes</button>
+          <input
+            placeholder="Serum creatinine (mg/dL)"
+            value={scr}
+            onChange={(e) => setScr(e.target.value)}
+          />
+          <input
+            placeholder="Creatinine clearance (mL/min)"
+            value={crcl}
+            onChange={(e) => setCrcl(e.target.value)}
+          />
+          <input
+            placeholder="CKD stage"
+            value={ckdStage}
+            onChange={(e) => setCkdStage(e.target.value)}
+          />
 
-        {msg && <p>{msg}</p>}
-        {err && <p style={{ color: "red" }}>{err}</p>}
+          <button onClick={onSave}>Save Changes</button>
 
-        <button
-          style={{ marginTop: "1rem" }}
-          onClick={() => nav("/patients")}
-        >
-          Back to Patients
-        </button>
+          {msg && <p>{msg}</p>}
+         {err && <p style={{ color: "red" }}>{err}</p>}
+
+          <button
+            style={{ marginTop: "1rem" }}
+            onClick={() => nav("/patients")}
+          >
+            Back to Patients
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

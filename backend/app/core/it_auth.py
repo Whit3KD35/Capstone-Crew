@@ -10,23 +10,23 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("FERNET_KEY") or "CHANGE_M
 ALGORITHM = "HS256"
 EXPIRE_MINUTES = 60
 
-patient_oauth2 = OAuth2PasswordBearer(tokenUrl="/patient-login/")
+it_oauth2 = OAuth2PasswordBearer(tokenUrl="/it/login")
 
-def create_patient_token(patient_id: Any) -> str:
+def create_it_token(user_id: Any) -> str:
     payload = {
-        "role": "patient",
-        "patient_id": str(patient_id),
+        "role": "it",
+        "user_id": str(user_id),
         "exp": datetime.now(timezone.utc) + timedelta(minutes=EXPIRE_MINUTES),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_patient(token: str = Depends(patient_oauth2)) -> dict:
+def get_current_it_user(token: str = Depends(it_oauth2)) -> dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("role") != "patient" or payload.get("patient_id") is None:
+        if payload.get("role") != "it" or payload.get("user_id") is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Patient access only",
+                detail="IT access only",
             )
         return payload
     except JWTError:

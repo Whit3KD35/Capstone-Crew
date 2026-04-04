@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlmodel import SQLModel, Field, Column, Relationship
 from pydantic import EmailStr, BaseModel
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, Integer, String, DateTime
 
 
 class Test(SQLModel, table=True):
@@ -23,7 +24,9 @@ class Clinician(SQLModel, table=True):
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str
     email: EmailStr = Field(unique=True, index=True, max_length=255)
-    password: str = Field(min_length=8, max_length=40)
+    password: str = Field(min_length=8, max_length=255)
+    last_login: Optional[datetime] = Field(default=None)
+    last_simulation_at: Optional[datetime] = Field(default=None)
 
 
 class PatientMedicationLink(SQLModel, table=True):
@@ -40,6 +43,8 @@ class Patient(SQLModel, table=True):
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     age: int | None = None
     sex: str | None = None
+    last_login: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    last_simulation_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
 
     full_name: str | None = None
     phone: str | None = None
@@ -164,8 +169,35 @@ class Simulation(SQLModel, table=True):
 
     patient: Patient = Relationship(back_populates="simulations")
 
+class AcceptedSimulation(SQLModel, table=True):
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
 
+    patient_id: uuid.UUID = Field(foreign_key="patient.id", index=True)
+    medication_id: uuid.UUID = Field(foreign_key="medication.id", index=True)
+
+    simulation_id: uuid.UUID = Field(foreign_key="simulation.id", unique=True)
+
+    accepted_at: datetime = Field(default_factory=datetime.now)
+
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )
+class ITUser(SQLModel, table=True):
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str
+    email: EmailStr = Field(unique=True, index=True, max_length=255)
+    password: str = Field(min_length=8, max_length=255)
+    role: str = Field(default="it")
+    
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(index=True, unique=True)
     hashedPassword: str
+    last_login: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    last_simulation_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    last_login: Optional[datetime] = None
+    last_simulation_at: Optional[datetime] = None

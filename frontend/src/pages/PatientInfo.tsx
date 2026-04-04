@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { type ChangeEvent, useEffect, useState } from "react";
 import { api } from "../api";
+import Navbar from "../pages/Navbar";
 
 type Patient = {
   id: string;
@@ -215,89 +216,92 @@ export default function PatientInfo() {
   }
 
   return (
-    <div className="container">
-      <div className="card">
-        <h1>Digital Twin</h1>
-        <h2>Patient Information</h2>
+    <>
+      <Navbar />
+      <div className="container">
+        <div className="card">
+          <h1>Digital Twin</h1>
+          <h2>Patient Information</h2>
 
-        {email && (
-          <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-            Email: <strong>{email}</strong>
-          </p>
-        )}
+          {email && (
+            <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+              Email: <strong>{email}</strong>
+            </p>
+          )}
 
-        <input placeholder="Full Name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-        <input placeholder="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        <input placeholder="Age" value={age} onChange={(e) => setAge(e.target.value)} />
-        <select value={sex} onChange={(e) => setSex(e.target.value)}>
-          <option value="">Biological sex</option>
-          {BIOLOGICAL_SEX_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-        <input placeholder="Weight (kg)" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} />
-        <input placeholder="Height (cm)" value={heightCm} onChange={(e) => setHeightCm(e.target.value)} />
+          <input placeholder="Full Name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          <input placeholder="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <input placeholder="Age" value={age} onChange={(e) => setAge(e.target.value)} />
+          <select value={sex} onChange={(e) => setSex(e.target.value)}>
+            <option value="">Biological sex</option>
+            {BIOLOGICAL_SEX_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+          <input placeholder="Weight (kg)" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} />
+          <input placeholder="Height (cm)" value={heightCm} onChange={(e) => setHeightCm(e.target.value)} />
 
-        <input placeholder="Serum creatinine (mg/dL)" value={scr} onChange={(e) => setScr(e.target.value)} />
-        <input placeholder="Creatinine clearance (mL/min)" value={crcl} onChange={(e) => setCrcl(e.target.value)} />
-        <input placeholder="CKD stage (e.g. G2)" value={ckdStage} onChange={(e) => setCkdStage(e.target.value)} />
+          <input placeholder="Serum creatinine (mg/dL)" value={scr} onChange={(e) => setScr(e.target.value)} />
+          <input placeholder="Creatinine clearance (mL/min)" value={crcl} onChange={(e) => setCrcl(e.target.value)} />
+          <input placeholder="CKD stage (e.g. G2)" value={ckdStage} onChange={(e) => setCkdStage(e.target.value)} />
 
-        <input placeholder="Systolic BP (mmHg)" value={systolicBp} onChange={(e) => setSystolicBp(e.target.value)} />
-        <input placeholder="Diastolic BP (mmHg)" value={diastolicBp} onChange={(e) => setDiastolicBp(e.target.value)} />
-        <input placeholder="Heart Rate (bpm)" value={heartRate} onChange={(e) => setHeartRate(e.target.value)} />
+          <input placeholder="Systolic BP (mmHg)" value={systolicBp} onChange={(e) => setSystolicBp(e.target.value)} />
+          <input placeholder="Diastolic BP (mmHg)" value={diastolicBp} onChange={(e) => setDiastolicBp(e.target.value)} />
+          <input placeholder="Heart Rate (bpm)" value={heartRate} onChange={(e) => setHeartRate(e.target.value)} />
 
-        {pregnancyRelevant && (
-          <>
-            <select value={isPregnant} onChange={(e) => setIsPregnant(e.target.value)}>
-              <option value="">Pregnant?</option>
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
+          {pregnancyRelevant && (
+            <>
+              <select value={isPregnant} onChange={(e) => setIsPregnant(e.target.value)}>
+                <option value="">Pregnant?</option>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
 
-            {isPregnant === "yes" && (
-              <input
-                placeholder="Pregnancy trimester (e.g. 1st / 2nd / 3rd)"
-                value={pregnancyTrimester}
-                onChange={(e) => setPregnancyTrimester(e.target.value)}
-              />
-            )}
+              {isPregnant === "yes" && (
+                <input
+                  placeholder="Pregnancy trimester (e.g. 1st / 2nd / 3rd)"
+                  value={pregnancyTrimester}
+                  onChange={(e) => setPregnancyTrimester(e.target.value)}
+                />
+              )}
 
-            <select value={isBreastfeeding} onChange={(e) => setIsBreastfeeding(e.target.value)}>
-              <option value="">Breastfeeding?</option>
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
-          </>
-        )}
+              <select value={isBreastfeeding} onChange={(e) => setIsBreastfeeding(e.target.value)}>
+                <option value="">Breastfeeding?</option>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </>
+          )}
 
-        <input
-          placeholder="Liver disease status (optional)"
-          value={liverDiseaseStatus}
-          onChange={(e) => setLiverDiseaseStatus(e.target.value)}
-        />
-        <input placeholder="Albumin (g/dL)" value={albuminGdl} onChange={(e) => setAlbuminGdl(e.target.value)} />
+          <input
+            placeholder="Liver disease status (optional)"
+            value={liverDiseaseStatus}
+            onChange={(e) => setLiverDiseaseStatus(e.target.value)}
+          />
+          <input placeholder="Albumin (g/dL)" value={albuminGdl} onChange={(e) => setAlbuminGdl(e.target.value)} />
 
-        <label style={{ display: "block", textAlign: "left", marginTop: "0.8rem" }}>Conditions (multi-select)</label>
-        <select multiple value={conditions} onChange={(e) => setConditions(getSelectedValues(e))}>
-          {CONDITION_OPTIONS.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
+          <label style={{ display: "block", textAlign: "left", marginTop: "0.8rem" }}>Conditions (multi-select)</label>
+          <select multiple value={conditions} onChange={(e) => setConditions(getSelectedValues(e))}>
+            {CONDITION_OPTIONS.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
 
-        <label style={{ display: "block", textAlign: "left", marginTop: "0.8rem" }}>Current Medications (multi-select)</label>
-        <select multiple value={currentMeds} onChange={(e) => setCurrentMeds(getSelectedValues(e))}>
-          {CURRENT_MED_OPTIONS.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
+          <label style={{ display: "block", textAlign: "left", marginTop: "0.8rem" }}>Current Medications (multi-select)</label>
+          <select multiple value={currentMeds} onChange={(e) => setCurrentMeds(getSelectedValues(e))}>
+            {CURRENT_MED_OPTIONS.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
 
-        <button onClick={onSave}>Save &amp; Simulate</button>
+          <button onClick={onSave}>Save &amp; Simulate</button>
 
-        {msg && <p>{msg}</p>}
-        {err && <p style={{ color: "red" }}>{err}</p>}
+          {msg && <p>{msg}</p>}
+          {err && <p style={{ color: "red" }}>{err}</p>}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { api, type SharedSimulationDetail, type SharedSimulationSummary } from "../api";
+import Navbar from "./Navbar";
 import { downloadSimulationPDF } from "./SimulationPDFExport";
 
 export default function PatientSimulations() {
@@ -84,95 +85,97 @@ export default function PatientSimulations() {
   }
 
   return (
-    <div style={{ maxWidth: "960px", margin: "0 auto" }}>
-      <h2>Received Simulations</h2>
-      <p style={{ fontSize: "0.9rem", color: "#555" }}>
-        Email: <strong>{localStorage.getItem("patient_email") || "unknown"}</strong>
-      </p>
-      <button onClick={onSignOut} style={{ marginBottom: "1rem" }}>
-        Sign Out
-      </button>
+    <>
+      <Navbar />
+      <div style={{ maxWidth: "960px", margin: "0 auto" }}>
+        <h2>Received Simulations</h2>
+        <p style={{ fontSize: "0.9rem", color: "#555" }}>
+          Email: <strong>{localStorage.getItem("patient_email") || "unknown"}</strong>
+        </p>
+        <button onClick={onSignOut} style={{ marginBottom: "1rem" }}>
+          Sign Out
+        </button>
 
-      {loading && <p>Loading...</p>}
-      {err && <p style={{ color: "red" }}>{err}</p>}
-      {!loading && rows.length === 0 && <p>No simulations have been shared with you yet.</p>}
+        {loading && <p>Loading...</p>}
+        {err && <p style={{ color: "red" }}>{err}</p>}
+        {!loading && rows.length === 0 && <p>No simulations have been shared with you yet.</p>}
 
-      {rows.length > 0 && (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: "0.75rem",
-            padding: "0.75rem",
-            marginBottom: "1rem",
-          }}
-        >
-          <label>
-            Choose simulation
-            <select
-              value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
-              style={{ marginLeft: "0.5rem" }}
-            >
-              {rows.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.medication_name || "Medication"} | {r.shared_at || r.created_at}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
-
-      {detail && (
-        <>
+        {rows.length > 0 && (
           <div
             style={{
               border: "1px solid #ddd",
               borderRadius: "0.75rem",
-              padding: "1rem",
+              padding: "0.75rem",
               marginBottom: "1rem",
             }}
           >
-            <h3 style={{ marginTop: 0 }}>{detail.medication_name || "Simulation"}</h3>
-            <div style={{ fontSize: "0.9rem" }}>
-              <div>Shared by: {detail.shared_by || "Unknown clinician"}</div>
-              <div>Shared at: {detail.shared_at || "Unknown"}</div>
-              <div style={{ marginTop: "0.5rem" }}>
-                Your current plan: <strong>{detail.dose_mg ?? "n/a"} mg</strong> every{" "}
-                <strong>{detail.interval_hr ?? "n/a"} hours</strong>
-              </div>
-              <div style={{ marginTop: "0.5rem" }}>
-                Time in target range:{" "}
-                <strong>{pctWithin != null ? `${pctWithin}%` : "n/a"}</strong>
-              </div>
-              <div>
-                Time above safe range:{" "}
-                <strong>{pctAbove != null ? `${pctAbove}%` : "n/a"}</strong>
-              </div>
-              <div>
-                Time below effective range:{" "}
-                <strong>{pctBelow != null ? `${pctBelow}%` : "n/a"}</strong>
-              </div>
-              {riskLevel && (
+            <label>
+              Choose simulation
+              <select
+                value={selectedId}
+                onChange={(e) => setSelectedId(e.target.value)}
+                style={{ marginLeft: "0.5rem" }}
+              >
+                {rows.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.medication_name || "Medication"} | {r.shared_at || r.created_at}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+
+        {detail && (
+          <>
+            <div
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: "0.75rem",
+                padding: "1rem",
+                marginBottom: "1rem",
+              }}
+            >
+              <h3 style={{ marginTop: 0 }}>{detail.medication_name || "Simulation"}</h3>
+              <div style={{ fontSize: "0.9rem" }}>
+                <div>Shared by: {detail.shared_by || "Unknown clinician"}</div>
+                <div>Shared at: {detail.shared_at || "Unknown"}</div>
                 <div style={{ marginTop: "0.5rem" }}>
-                  Overall risk level: <strong>{riskLevel.toUpperCase()}</strong>
+                  Your current plan: <strong>{detail.dose_mg ?? "n/a"} mg</strong> every{" "}
+                  <strong>{detail.interval_hr ?? "n/a"} hours</strong>
                 </div>
-              )}
-              {alerts.length > 0 && (
                 <div style={{ marginTop: "0.5rem" }}>
-                  <div style={{ fontWeight: 600 }}>What this means for you:</div>
-                  <ul style={{ marginTop: "0.2rem" }}>
-                    {alerts.map((a, i) => (
-                      <li key={i}>{a}</li>
-                    ))}
-                  </ul>
+                  Time in target range:{" "}
+                  <strong>{pctWithin != null ? `${pctWithin}%` : "n/a"}</strong>
                 </div>
-              )}
-              <div style={{ marginTop: "0.5rem", color: "#555" }}>
-                This chart shows how medicine levels may rise and fall between doses.
+                <div>
+                  Time above safe range:{" "}
+                  <strong>{pctAbove != null ? `${pctAbove}%` : "n/a"}</strong>
+                </div>
+                <div>
+                  Time below effective range:{" "}
+                  <strong>{pctBelow != null ? `${pctBelow}%` : "n/a"}</strong>
+                </div>
+                {riskLevel && (
+                  <div style={{ marginTop: "0.5rem" }}>
+                    Overall risk level: <strong>{riskLevel.toUpperCase()}</strong>
+                  </div>
+                )}
+                {alerts.length > 0 && (
+                  <div style={{ marginTop: "0.5rem" }}>
+                    <div style={{ fontWeight: 600 }}>What this means for you:</div>
+                    <ul style={{ marginTop: "0.2rem" }}>
+                      {alerts.map((a, i) => (
+                        <li key={i}>{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div style={{ marginTop: "0.5rem", color: "#555" }}>
+                  This chart shows how medicine levels may rise and fall between doses.
+                </div>
               </div>
             </div>
-          </div>
 
           {/* ── Chart (ref attached here for PDF screenshot) ── */}
           <div
@@ -202,5 +205,6 @@ export default function PatientSimulations() {
         </>
       )}
     </div>
+    </>
   );
 }

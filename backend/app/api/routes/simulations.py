@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlmodel import Session, select
 
+from app.models import AcceptedSimulation
+from sqlmodel import Session, select
+
 from ...core.db import get_session
 from ...core.patient_auth import get_current_patient
 from ...core.security import decryptData
@@ -277,6 +280,10 @@ def run_simulation(
     session.add(sim)
     session.commit()
     session.refresh(sim)
+    
+    pat.last_simulation_at = datetime.now(timezone.utc)
+    session.add(pat)
+    session.commit()
 
     chart_times = times_hr[:2000]
     chart_conc = conc_mg_per_L[:2000]
@@ -417,3 +424,55 @@ def get_shared_simulation_for_patient(
 
     med = session.get(Medication, sim.medication_id)
     return _shared_payload(sim, med.name if med else None)
+
+@router.post("/accept")
+def accept_simulation(
+    patient_id: UUID,
+    medication_id: UUID,
+    simulation_id: UUID,
+    session: Session = Depends(get_session)
+):
+    existing = session.exec(
+        select(AcceptedSimulation).where(
+            AcceptedSimulation.patient_id == patient_id,
+            AcceptedSimulation.medication_id == medication_id
+        )
+    ).first()
+
+    if existing:
+        existing.simulation_id = simulation_id
+        existing.accepted_at = datetime.now()
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing
+
+    accepted = AcceptedSimulation(
+        patient_id=patient_id,
+        medication_id=medication_id,
+        simulation_id=simulation_id
+    )
+
+    session.add(accepted)
+    session.commit()
+    session.refresh(accepted)
+
+    return accepted
+
+@router.get("/accepted/{patient_id}/{medication_id}")
+def get_accepted_simulation(
+    patient_id: UUID,
+    medication_id: UUID,
+    session: Session = Depends(get_session)
+):
+    accepted = session.exec(
+        select(AcceptedSimulation).where(
+            AcceptedSimulation.patient_id == patient_id,
+            AcceptedSimulation.medication_id == medication_id
+        )
+    ).first()
+
+    if not accepted:
+        return {"message": "No accepted simulation found"}
+
+    return accepted

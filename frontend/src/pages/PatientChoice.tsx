@@ -1,24 +1,28 @@
 import { useNavigate } from "react-router-dom";
+import Navbar from "../pages/Navbar";
 
 export default function PatientChoice() {
   const nav = useNavigate();
 
   return (
-    <div className="container">
-      <div className="card">
-        <h1>Digital Twin</h1>
-        <h2>Patient Selection</h2>
-        <p>Choose how you would like to continue:</p>
+    <>
+      <Navbar />
+      <div className="container">
+        <div className="card">
+          <h1>Digital Twin</h1>
+          <h2>Patient Selection</h2>
+          <p>Choose how you would like to continue:</p>
         
-        <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
-          <button onClick={() => { localStorage.setItem("existing","false"); nav("/basic"); }}>
-            New Patient
-          </button>
-          <button onClick={() => { localStorage.setItem("existing","true"); nav("/basic"); }}>
-            Existing Patient
-          </button>
+          <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
+            <button onClick={() => { localStorage.setItem("existing","false"); nav("/basic"); }}>
+              New Patient
+            </button>
+            <button onClick={() => { localStorage.setItem("existing","true"); nav("/basic"); }}>
+              Existing Patient
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

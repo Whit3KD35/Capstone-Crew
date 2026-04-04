@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.db import create_tables
-from app.api.routes import clinicians, patients, simulations, login, medications, pk, patient_login
+from app.api.routes import clinicians, patients, simulations, login, medications, pk, patient_login,it
 
 load_dotenv()
 
@@ -48,3 +48,4 @@ app.include_router(login.router)
 app.include_router(medications.router)
 app.include_router(pk.router)
 app.include_router(patient_login.router)
+app.include_router(it.router)

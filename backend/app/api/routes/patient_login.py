@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlmodel import Session, select
+from datetime import datetime
 
 from ...core.db import get_session
 from ...core.patient_auth import create_patient_token
@@ -47,6 +48,10 @@ def patient_login(data: LoginRequest, session: Session = Depends(get_session)):
     patient = _find_patient_by_email(session, data.email)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    user.last_login = datetime.utcnow()
+    session.add(user)
+    session.commit()
 
     token = create_patient_token(patient.id)
     return {"access_token": token, "token_type": "bearer"}
