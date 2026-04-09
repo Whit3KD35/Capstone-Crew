@@ -1,17 +1,24 @@
 /* Global Layout */
+* {
+  box-sizing: border-box;
+}
+
 body {
   font-family: "Segoe UI", system-ui, sans-serif;
   background: linear-gradient(135deg, #e7ecff, #f4f7ff);
   color: #111;
   margin: 0;
   padding: 0;
+  min-width: 320px;
+  min-height: 100vh;
 }
 
 .container {
-  min-height: 100vh;
+  min-height: calc(100vh - 4rem);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 1rem;
 }
 
 .card {
@@ -19,8 +26,8 @@ body {
   border: 1px solid #dde1f7;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  padding: 2rem 3rem;
-  width: 420px;
+  padding: 1.5rem;
+  width: min(460px, 100%);
   text-align: center;
 }
 
@@ -97,4 +104,10 @@ p {
   margin-top: 0.8rem;
   font-size: 0.9rem;
   color: #333;
+}
+
+@media (min-width: 768px) {
+  .card {
+    padding: 2rem 2.25rem;
+  }
 }

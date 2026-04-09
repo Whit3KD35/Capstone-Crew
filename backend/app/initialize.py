@@ -1,6 +1,6 @@
 import logging
-from sqlmodel import Session
-from core.db import engine, create_tables, drop_tables
+import os
+from core.db import create_tables, drop_tables
 import models
 
 logging.basicConfig(level=logging.INFO)
@@ -13,11 +13,13 @@ def init() -> None:
 '''
 
 def main() -> None:
-    logger.info("Creating tables...")
-    #init()
-    drop_tables()
+    logger.info("Ensuring tables exist...")
+    # Safety guard for production deploys.
+    if os.getenv("RESET_DB_ON_STARTUP", "").strip().lower() == "true":
+        logger.warning("RESET_DB_ON_STARTUP=true, dropping all tables before recreation.")
+        drop_tables()
     create_tables()
-    logger.info("Tables created")
+    logger.info("Database initialization complete")
 
 
 if __name__ == "__main__":

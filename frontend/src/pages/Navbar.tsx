@@ -18,7 +18,8 @@ export default function Navbar() {
       display: "flex",
       justifyContent: "flex-end",
       gap: "10px",
-      padding: "10px"
+      padding: "10px",
+      flexWrap: "wrap"
     }}>
       <button onClick={handleHome}>Home</button>
       <button onClick={handleLogout}>Logout</button>

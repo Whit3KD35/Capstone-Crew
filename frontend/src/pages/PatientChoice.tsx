@@ -13,11 +13,11 @@ export default function PatientChoice() {
           <h2>Patient Selection</h2>
           <p>Choose how you would like to continue:</p>
         
-          <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
-            <button onClick={() => { localStorage.setItem("existing","false"); nav("/basic"); }}>
+          <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
+            <button style={{ minWidth: "11rem" }} onClick={() => { localStorage.setItem("existing","false"); nav("/basic"); }}>
               New Patient
             </button>
-            <button onClick={() => { localStorage.setItem("existing","true"); nav("/basic"); }}>
+            <button style={{ minWidth: "11rem" }} onClick={() => { localStorage.setItem("existing","true"); nav("/basic"); }}>
               Existing Patient
             </button>
           </div>

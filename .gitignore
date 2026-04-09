@@ -4,6 +4,9 @@
 backend/.env
 *.key
 *.pem
+!.env.example
+!backend/.env.example
+!frontend/.env.example
 
 # IDE and editor files
 .vscode/

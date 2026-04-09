@@ -1,0 +1,23 @@
+{
+  "name": "Capstone Crew Digital Twin",
+  "short_name": "Capstone Crew",
+  "description": "Patient-facing and clinician-facing pharmacokinetics simulation web app.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f7ff",
+  "theme_color": "#1f3a8a",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
