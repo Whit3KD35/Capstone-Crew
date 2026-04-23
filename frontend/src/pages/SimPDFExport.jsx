@@ -250,9 +250,11 @@ export async function downloadSimulationPDF(sim, chartRef) {
   }
 
   // ── PK Parameters Used ────────────────────────────────────────────────────
+  const skipParams = new Set(["recommended_regimens"]);
   if (Object.keys(params).length > 0) {
     addSectionTitle("PK Parameters Used");
     Object.entries(params).forEach(([k, v]) => {
+      if (skipParams.has(k)) return;
       addKV(k, formatParamValue(v));
     });
   }
