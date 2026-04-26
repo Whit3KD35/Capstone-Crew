@@ -285,6 +285,69 @@ async function buildSimulationPDF(sim, chartRef) {
   if (pc.conditions?.length)          addKV("Conditions",          pc.conditions.join(", "));
   if (pc.current_medications?.length) addKV("Current Medications", pc.current_medications.join(", "));
 
+  // ── Dosing Schedule Table ─────────────────────────────────────────────────
+  if (sim.dose_mg && sim.interval_hr && sim.duration_hr) {
+    addSectionTitle("Dosing Schedule");
+    y += 2;
+
+    const intervalHr  = parseFloat(sim.interval_hr);
+    const durationHr  = parseFloat(sim.duration_hr);
+    const doseMg      = parseFloat(sim.dose_mg);
+    const totalDoses  = Math.round(durationHr / intervalHr);
+    const startDate   = sim.shared_at ? new Date(sim.shared_at) : new Date();
+
+    // Table header
+    const cols2 = ["Dose #", "Day", "Time", "Amount"];
+    const colXs  = [margin, margin + 20, margin + 55, margin + 110];
+    const rowH   = 7;
+
+    const drawTableHeader = () => {
+      setColor(BRAND_BLUE, "fill");
+      pdf.rect(margin, y, cW, rowH, "F");
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(255, 255, 255);
+      cols2.forEach((col, i) => pdf.text(col, colXs[i] + 2, y + 5));
+      resetColor();
+      y += rowH;
+    };
+
+    drawTableHeader();
+
+    for (let d = 0; d < totalDoses; d++) {
+      checkPage(rowH + 2);
+      // Re-draw header on new page
+      if (y === margin) drawTableHeader();
+
+      const doseDate = new Date(startDate.getTime() + d * intervalHr * 3600000);
+      const dayLabel = `Day ${Math.floor((d * intervalHr) / 24) + 1}`;
+      const timeLabel = doseDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const isEven = d % 2 === 0;
+
+      if (isEven) {
+        pdf.setFillColor(248, 250, 252);
+        pdf.rect(margin, y, cW, rowH, "F");
+      }
+
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      resetColor();
+      pdf.text(String(d + 1),       colXs[0] + 2, y + 5);
+      pdf.text(dayLabel,            colXs[1] + 2, y + 5);
+      pdf.text(timeLabel,           colXs[2] + 2, y + 5);
+      pdf.text(`${doseMg} mg`,      colXs[3] + 2, y + 5);
+
+      // row border
+      pdf.setDrawColor(230, 230, 230);
+      pdf.line(margin, y + rowH, margin + cW, y + rowH);
+      y += rowH;
+    }
+
+    // outer border
+    pdf.setDrawColor(...BRAND_BLUE);
+    y += 4;
+  }
+  
   // ── ADE Screening ─────────────────────────────────────────────────────────
   if (Object.keys(ade).length > 0) {
     addSectionTitle("ADE / Drug Interaction Screening");
