@@ -259,32 +259,6 @@ export async function downloadSimulationPDF(sim, chartRef) {
     });
   }
 
-  // ── Patient Context ───────────────────────────────────────────────────────
-  addSectionTitle("Patient Context");
-  const patientFields = [
-    ["Age",                  pc.age,                         ""],
-    ["Sex",                  pc.sex,                         ""],
-    ["Weight",               pc.weight_kg,                   "kg"],
-    ["Height",               pc.height_cm,                   "cm"],
-    ["Serum Creatinine",     pc.serum_creatinine_mg_dl,      "mg/dL"],
-    ["Creatinine Clearance", pc.creatinine_clearance_ml_min, "mL/min"],
-    ["CKD Stage",            pc.ckd_stage,                   ""],
-    ["Pregnant",             String(pc.is_pregnant ?? "N/A"),""],
-    ["Pregnancy Trimester",  pc.pregnancy_trimester,         ""],
-    ["Breastfeeding",        String(pc.is_breastfeeding ?? "N/A"), ""],
-    ["Liver Disease",        pc.liver_disease_status,        ""],
-    ["Albumin",              pc.albumin_g_dl,                "g/dL"],
-    ["Systolic BP",          pc.systolic_bp_mm_hg,           "mmHg"],
-    ["Diastolic BP",         pc.diastolic_bp_mm_hg,          "mmHg"],
-    ["Heart Rate",           pc.heart_rate_bpm,              "bpm"],
-  ];
-  patientFields.forEach(([label, val, unit]) => {
-    if (val == null || val === "N/A" || val === "null") return;
-    addKV(label, val, unit);
-  });
-  if (pc.conditions?.length)          addKV("Conditions",          pc.conditions.join(", "));
-  if (pc.current_medications?.length) addKV("Current Medications", pc.current_medications.join(", "));
-
   // ── Dosing Schedule Table ─────────────────────────────────────────────────
   if (sim.dose_mg && sim.interval_hr && sim.duration_hr) {
     addSectionTitle("Dosing Schedule");
@@ -362,7 +336,18 @@ export async function downloadSimulationPDF(sim, chartRef) {
     addSectionTitle("Concentration–Time Profile");
     y += 2;
     try {
-      const canvas  = await html2canvas(chartRef.current, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+      const canvas  = await html2canvas(chartRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        windowWidth: chartRef.current.scrollWidth,
+        windowHeight: chartRef.current.scrollHeight,
+        y: 0,
+        height: chartRef.current.scrollHeight,
+        width: chartRef.current.scrollWidth,
+      });
       const imgData = canvas.toDataURL("image/png");
       const imgH    = (canvas.height / canvas.width) * cW;
       checkPage(imgH + 5);
